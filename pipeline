@@ -1,7 +1,0 @@
-1️⃣ transforms.py      (how images are prepared)
-2️⃣ dataset.py         (how images + labels are read)
-3️⃣ loader.py          (how batches are made)
-4️⃣ cnn.py             (model)
-5️⃣ train.py           (training loop)
-6️⃣ evaluation.py      (metrics)
-7️⃣ model_training.py  (connect everything)
