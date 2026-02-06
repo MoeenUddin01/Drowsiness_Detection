@@ -1,5 +1,3 @@
-datas/
-
 
 nano .gitignore
 # or
@@ -35,3 +33,9 @@ wandb/
 
 # OS
 .DS_Store
+datas/
+datas/raw/
+datas/processed/
+
+datas/raw/*
+datas/processed/*
