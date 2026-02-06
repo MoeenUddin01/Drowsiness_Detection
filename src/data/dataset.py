@@ -1,46 +1,51 @@
-#src/data/dataset.py
+# src/data/dataset.py
 
 import os
 from PIL import Image
 from torch.utils.data import Dataset
-from .transforms import get_data_transforms
+from src.data.transforms import get_data_transforms
 
 class DrowsinessDataset(Dataset):
-    def __init__(self,data_dir,train=True):
-        self.data_dir =data_dir
-        self.train = train
+    def __init__(self, data_dir, train=True):
+        """
+        data_dir:
+            datas/processed/train
+            datas/processed/test
+        """
+        self.data_dir = data_dir
         self.transform = get_data_transforms(train)
-        
-        #list to hold (image_path,label) tuples
-        self.samples = []
-        
-        #map class names to labels
-        self.class_to_label = {"closed_1":0,"opened_1":1}
-        
-        def _load_images(self):
-            
-        # Iterate over class folders
-            for class_name, label in self.class_to_label.items():
-                class_folder = os.path.join(self.data_dir, class_name)
-            
-                # Get all files in the folder
-                for filename in os.listdir(class_folder):
-                    if filename.endswith((".jpg", ".png", ".jpeg")):
-                        # Store full path + label
-                        self.samples.append((os.path.join(class_folder, filename), label))
 
-        # Load images and labels
-        def __len__(self):
-            #return total number of images
-            return len(self.samples)
-        
-        def __getitem__(self,idx):
-            #get image path and label
-            img_path,label = self.images[idx]
-            #open image
-            image=image.open(img_path).convert("RGB")
-            #apply transforms
-            if self.transform:
-                image = self.transform(image)
-                
-            return image,label
+        self.images = []
+        self.labels = []
+
+        class_to_label = {
+            "closed_1": 0,
+            "opened": 1
+        }
+
+        for class_name, label in class_to_label.items():
+            class_path = os.path.join(data_dir, class_name)
+
+            if not os.path.exists(class_path):
+                continue
+
+            for img_name in os.listdir(class_path):
+                img_path = os.path.join(class_path, img_name)
+                self.images.append(img_path)
+                self.labels.append(label)
+
+    def __len__(self):
+        """Return total number of samples"""
+        return len(self.images)
+
+    def __getitem__(self, index):
+        """Return one sample"""
+        img_path = self.images[index]
+        label = self.labels[index]
+
+        image = Image.open(img_path).convert("RGB")
+
+        if self.transform:
+            image = self.transform(image)
+
+        return image, label
