@@ -17,7 +17,7 @@ class DrowsinessCNN(nn.Module):
         self.conv3 = nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, padding=1)
         
         # Fully connected layers
-        self.fc1 = nn.Linear(64 * 28 * 28, 128)  # flattened feature map
+        self.fc1 = nn.Linear(64 * 16 * 16, 128)  # flattened feature map
         self.fc2 = nn.Linear(128, num_classes)   # output layer
     
     # Forward pass
