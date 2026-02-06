@@ -17,7 +17,7 @@ env/
 .ipynb_checkpoints/
 
 # Datasets
-data/
+
 datas/
 *.zip
 
