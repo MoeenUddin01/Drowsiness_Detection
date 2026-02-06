@@ -151,5 +151,5 @@ if __name__ == "__main__":
         num_epochs=20,              # Can increase epochs; resumes from last checkpoint
         model_name="drowsiness_cnn",
         artifact_root="artifacts",  # Change to Drive path in Colab
-        wandb_run_id=None            # Add your run ID to continue in same W&B chart
+        #wandb_run_id=None            # Add your run ID to continue in same W&B chart
     )
