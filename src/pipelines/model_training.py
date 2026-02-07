@@ -1,15 +1,38 @@
-# model_training.py
-
 import torch
 from torch.utils.data import DataLoader
 from src.data.loader import get_dataloader
 from src.data.dataset import DrowsinessDataset
 from src.model.cnn import DrowsinessCNN
 from src.model.train import Trainer
-from src.model.evaluation import Evaluator   # Make sure filename is correct
+from src.model.evaluation import Evaluator
 import wandb
 import os
 from datetime import datetime
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
+def save_confusion_matrix(y_true, y_pred, epoch, artifact_root="artifacts"):
+    # 1️⃣ Create folder
+    cm_dir = os.path.join(artifact_root, "confusion_matrix")
+    os.makedirs(cm_dir, exist_ok=True)
+
+    # 2️⃣ Compute matrix
+    cm = confusion_matrix(y_true, y_pred)
+
+    # 3️⃣ Plot
+    plt.figure(figsize=(6, 5))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False)
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
+    plt.title(f"Confusion Matrix Epoch {epoch}")
+
+    # 4️⃣ Save figure
+    cm_path = os.path.join(cm_dir, f"epoch_{epoch}_cm.png")
+    plt.savefig(cm_path)
+    plt.close()
+    print(f"Confusion matrix saved: {cm_path}")
+
 
 def run_training_pipeline(
     train_data_dir="datas/processed/train",
@@ -19,45 +42,47 @@ def run_training_pipeline(
     num_epochs=20,
     model_name="drowsiness_cnn",
     device=None,
-    artifact_root="artifacts"  # Can point to Google Drive in Colab
+    artifact_root="artifacts"
 ):
     try:
-        # 1️⃣ Device setup
+        # 1️⃣ Device
         device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         print("Using device:", device)
 
-        # 2️⃣ Create artifact folders
-        os.makedirs(os.path.join(artifact_root, "models"), exist_ok=True)
-        os.makedirs(os.path.join(artifact_root, "checkpoints"), exist_ok=True)
+        # 2️⃣ Artifact folders
+        models_dir = os.path.join(artifact_root, "models")
+        checkpoints_dir = os.path.join(artifact_root, "checkpoints")
+        os.makedirs(models_dir, exist_ok=True)
+        os.makedirs(checkpoints_dir, exist_ok=True)
+        os.makedirs(os.path.join(artifact_root, "confusion_matrix"), exist_ok=True)
 
-        # 3️⃣ Initialize W&B
-        config = {
-            "Epochs": num_epochs,
-            "Batch Size": batch_size,
-            "Learning Rate": learning_rate,
-            "Device": str(device),
-            "Model": "DrowsinessCNN"
-        }
+        # 3️⃣ W&B
         wandb.init(
             project="Drowsiness-Detection-CNN",
-            config=config,
-            name=f'Experiment-{datetime.now().strftime("%d_%m_%Y_%H_%M")}'
+            name=f'Experiment-{datetime.now().strftime("%d_%m_%Y_%H_%M")}',
+            config={
+                "epochs": num_epochs,
+                "batch_size": batch_size,
+                "learning_rate": learning_rate,
+                "model": "DrowsinessCNN",
+                "device": str(device)
+            }
         )
 
-        # 4️⃣ Load datasets
+        # 4️⃣ Datasets
         train_dataset = DrowsinessDataset(data_dir=train_data_dir, train=True)
-        train_loader = get_dataloader(train_dataset, batch_size=batch_size, shuffle=True)
-        print(f"Training samples: {len(train_dataset)}")
-
         val_dataset = DrowsinessDataset(data_dir=test_data_dir, train=False)
-        val_loader = get_dataloader(val_dataset, batch_size=batch_size, shuffle=False)
+        print(f"Training samples: {len(train_dataset)}")
         print(f"Validation samples: {len(val_dataset)}")
 
-        # 5️⃣ Initialize model
+        train_loader = get_dataloader(train_dataset, batch_size=batch_size, shuffle=True)
+        val_loader = get_dataloader(val_dataset, batch_size=batch_size, shuffle=False)
+
+        # 5️⃣ Model
         model = DrowsinessCNN(num_classes=2).to(device)
         print("Model initialized")
 
-        # 6️⃣ Initialize Trainer and Evaluator
+        # 6️⃣ Trainer & Evaluator
         trainer = Trainer(
             batch_size=batch_size,
             learning_rate=learning_rate,
@@ -66,7 +91,6 @@ def run_training_pipeline(
             model_path=model_name,
             device=device
         )
-
         evaluator = Evaluator(
             batch_size=batch_size,
             data=val_loader,
@@ -74,14 +98,13 @@ def run_training_pipeline(
             device=device
         )
 
-        # 7️⃣ Resume from latest checkpoint if exists
-        checkpoint_dir = os.path.join(artifact_root, "checkpoints")
-        latest_checkpoint_path = os.path.join(checkpoint_dir, "latest_checkpoint.pth")
+        # 7️⃣ Resume checkpoint
+        latest_checkpoint_path = os.path.join(checkpoints_dir, "latest_checkpoint.pth")
         start_epoch = 1
         BEST_ACCURACY = 0
 
         if os.path.exists(latest_checkpoint_path):
-            checkpoint = torch.load(latest_checkpoint_path)
+            checkpoint = torch.load(latest_checkpoint_path, map_location=device)
             model.load_state_dict(checkpoint["model_state_dict"])
             trainer.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             start_epoch = checkpoint["epoch"] + 1
@@ -90,41 +113,57 @@ def run_training_pipeline(
 
         # 8️⃣ Epoch loop
         for epoch in range(start_epoch, num_epochs + 1):
-            # Training
+            print(f"\n========== Epoch {epoch} ==========")
+
+            # ---- Training ----
             avg_train_loss, _, train_acc = trainer.start_training_loop(epoch)
 
-            # Validation
-            avg_val_loss, _, val_acc = evaluator.start_evaluation_loop(epoch)
+            # ---- Validation ----
+            avg_val_loss, val_acc = evaluator.start_evaluation_loop(epoch)
 
-            # Log metrics to W&B
+            # ---- Confusion matrix ----
+            all_labels = []
+            all_preds = []
+            for x, y in val_loader:
+                x = x.to(device)
+                y = y.to(device)
+                with torch.no_grad():
+                    preds = model(x)
+                    _, predicted = torch.max(preds, 1)
+                all_labels.extend(y.cpu().numpy())
+                all_preds.extend(predicted.cpu().numpy())
+            save_confusion_matrix(all_labels, all_preds, epoch, artifact_root)
+
+            # ---- W&B log ----
             wandb.log({
-                "Epoch": epoch,
-                "Training Loss": avg_train_loss,
-                "Validation Loss": avg_val_loss,
-                "Training Accuracy": train_acc,
-                "Validation Accuracy": val_acc
+                "epoch": epoch,
+                "train_loss": avg_train_loss,
+                "val_loss": avg_val_loss,
+                "train_accuracy": train_acc,
+                "val_accuracy": val_acc
             })
 
-            # Save checkpoints
+            # ---- Checkpoint ----
             checkpoint = {
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": trainer.optimizer.state_dict(),
                 "best_accuracy": BEST_ACCURACY
             }
-            torch.save(checkpoint, os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch}.pth"))
+            torch.save(checkpoint, os.path.join(checkpoints_dir, f"checkpoint_epoch_{epoch}.pth"))
             torch.save(checkpoint, latest_checkpoint_path)
             print(f"Checkpoint saved for epoch {epoch}")
 
-            # Save best model
+            # ---- Best model ----
             if val_acc > BEST_ACCURACY:
                 BEST_ACCURACY = val_acc
-                final_model_path = os.path.join(artifact_root, "models", f"{model_name}.pth")
+                final_model_path = os.path.join(models_dir, f"{model_name}_best.pth")
                 torch.save(model.state_dict(), final_model_path)
                 wandb.save(final_model_path)
-                print(f"Best model updated: {val_acc:.2f}% saved at {final_model_path}")
+                print(f"🔥 Best model updated (Accuracy: {val_acc:.2f}%) -> {final_model_path}")
 
         print("Training pipeline completed successfully!")
+        wandb.finish()
 
     except Exception as e:
         print(f"Error in training pipeline: {e}")
@@ -135,11 +174,7 @@ def run_training_pipeline(
 # Run pipeline
 # ===============================
 if __name__ == "__main__":
-    # Login to W&B
     wandb.login(key=os.environ.get("WANDB_API_KEY", None))
-
-    # Example: if using Colab, mount Google Drive first and set artifact_root
-    # artifact_root = "/content/drive/MyDrive/Drowsiness_Project/artifacts"
 
     run_training_pipeline(
         batch_size=16,
