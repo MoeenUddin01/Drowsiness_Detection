@@ -20,7 +20,7 @@ class DrowsinessDataset(Dataset):
 
         class_to_label = {
             "closed_1": 0,
-            "opened": 1
+            "opened_1": 1
         }
 
         for class_name, label in class_to_label.items():
