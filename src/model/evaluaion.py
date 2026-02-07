@@ -29,7 +29,8 @@ class Evaluator:
                     validation_losses.append(validation_loss.item())
                     
                     # predicted class
-                    _, predicted = torch.max(prediction.data, 1)
+                    _, predicted = torch.max(prediction, 1)
+
                     total += y.size(0)
                     correct += (predicted == y).sum().item()
 
@@ -41,7 +42,8 @@ class Evaluator:
             
             print(f"Average Epoch Validation Loss {epoch} -> {average_epoch_validation_loss:.4f}")
             print(f"Validation-> Epoch {epoch}: {epoch_acc:.2f}%")
-            return average_epoch_validation_loss, validation_losses, epoch_acc
+            return average_epoch_validation_loss, epoch_acc
+
         
         except Exception as e:
             print(f"Error in Validation Loop Epoch {epoch} and Batch No {batch} due to {e}")

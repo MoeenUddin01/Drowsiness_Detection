@@ -1,10 +1,12 @@
+# model_training.py
+
 import torch
 from torch.utils.data import DataLoader
 from src.data.loader import get_dataloader
 from src.data.dataset import DrowsinessDataset
 from src.model.cnn import DrowsinessCNN
 from src.model.train import Trainer
-from src.model.evaluaion import Evaluator
+from src.model.evaluation import Evaluator   # Make sure filename is correct
 import wandb
 import os
 from datetime import datetime
@@ -14,11 +16,10 @@ def run_training_pipeline(
     test_data_dir="datas/processed/test",
     batch_size=16,
     learning_rate=0.001,
-    num_epochs=10,
+    num_epochs=20,
     model_name="drowsiness_cnn",
     device=None,
-    artifact_root="artifacts",  # Can be set to Google Drive path in Colab
-              
+    artifact_root="artifacts"  # Can point to Google Drive in Colab
 ):
     try:
         # 1️⃣ Device setup
@@ -37,22 +38,20 @@ def run_training_pipeline(
             "Device": str(device),
             "Model": "DrowsinessCNN"
         }
-        #run_id=""
         wandb.init(
             project="Drowsiness-Detection-CNN",
             config=config,
-            #id=run_id,
-            #resume="allow",
             name=f'Experiment-{datetime.now().strftime("%d_%m_%Y_%H_%M")}'
-        
         )
 
         # 4️⃣ Load datasets
         train_dataset = DrowsinessDataset(data_dir=train_data_dir, train=True)
         train_loader = get_dataloader(train_dataset, batch_size=batch_size, shuffle=True)
+        print(f"Training samples: {len(train_dataset)}")
 
-        test_dataset = DrowsinessDataset(data_dir=test_data_dir, train=False)
-        test_loader = get_dataloader(test_dataset, batch_size=batch_size, shuffle=False)
+        val_dataset = DrowsinessDataset(data_dir=test_data_dir, train=False)
+        val_loader = get_dataloader(val_dataset, batch_size=batch_size, shuffle=False)
+        print(f"Validation samples: {len(val_dataset)}")
 
         # 5️⃣ Initialize model
         model = DrowsinessCNN(num_classes=2).to(device)
@@ -70,15 +69,14 @@ def run_training_pipeline(
 
         evaluator = Evaluator(
             batch_size=batch_size,
-            data=test_loader,
+            data=val_loader,
             model=model,
             device=device
         )
 
-        # 7️⃣ Check for latest checkpoint to resume
+        # 7️⃣ Resume from latest checkpoint if exists
         checkpoint_dir = os.path.join(artifact_root, "checkpoints")
         latest_checkpoint_path = os.path.join(checkpoint_dir, "latest_checkpoint.pth")
-
         start_epoch = 1
         BEST_ACCURACY = 0
 
@@ -88,14 +86,14 @@ def run_training_pipeline(
             trainer.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             start_epoch = checkpoint["epoch"] + 1
             BEST_ACCURACY = checkpoint.get("best_accuracy", 0)
-            print(f"Resuming training from epoch {start_epoch}, best accuracy so far: {BEST_ACCURACY:.2f}%")
+            print(f"Resuming from epoch {start_epoch}, best accuracy: {BEST_ACCURACY:.2f}%")
 
         # 8️⃣ Epoch loop
         for epoch in range(start_epoch, num_epochs + 1):
             # Training
             avg_train_loss, _, train_acc = trainer.start_training_loop(epoch)
 
-            # Evaluation
+            # Validation
             avg_val_loss, _, val_acc = evaluator.start_evaluation_loop(epoch)
 
             # Log metrics to W&B
@@ -107,17 +105,16 @@ def run_training_pipeline(
                 "Validation Accuracy": val_acc
             })
 
-            # Save checkpoint every epoch
+            # Save checkpoints
             checkpoint = {
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": trainer.optimizer.state_dict(),
                 "best_accuracy": BEST_ACCURACY
             }
-            epoch_checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch}.pth")
-            torch.save(checkpoint, epoch_checkpoint_path)
+            torch.save(checkpoint, os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch}.pth"))
             torch.save(checkpoint, latest_checkpoint_path)
-            print(f"Checkpoint saved at {epoch_checkpoint_path}")
+            print(f"Checkpoint saved for epoch {epoch}")
 
             # Save best model
             if val_acc > BEST_ACCURACY:
@@ -125,7 +122,7 @@ def run_training_pipeline(
                 final_model_path = os.path.join(artifact_root, "models", f"{model_name}.pth")
                 torch.save(model.state_dict(), final_model_path)
                 wandb.save(final_model_path)
-                print(f"Best model with Accuracy {val_acc:.2f}% saved at {final_model_path}")
+                print(f"Best model updated: {val_acc:.2f}% saved at {final_model_path}")
 
         print("Training pipeline completed successfully!")
 
@@ -138,18 +135,16 @@ def run_training_pipeline(
 # Run pipeline
 # ===============================
 if __name__ == "__main__":
-    # Login to W&B (API key from environment variable)
-    import os
+    # Login to W&B
     wandb.login(key=os.environ.get("WANDB_API_KEY", None))
 
     # Example: if using Colab, mount Google Drive first and set artifact_root
     # artifact_root = "/content/drive/MyDrive/Drowsiness_Project/artifacts"
-    
+
     run_training_pipeline(
         batch_size=16,
         learning_rate=0.001,
-        num_epochs=20,              # Can increase epochs; resumes from last checkpoint
+        num_epochs=20,
         model_name="drowsiness_cnn",
-        artifact_root="artifacts",  # Change to Drive path in Colab
-        #wandb_run_id=None            # Add your run ID to continue in same W&B chart
+        artifact_root="artifacts"
     )
