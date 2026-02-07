@@ -12,28 +12,40 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
 
+
+# ============================================================
+# Save confusion matrix (NO warnings, always correct shape)
+# ============================================================
 def save_confusion_matrix(y_true, y_pred, epoch, artifact_root="artifacts"):
-    # 1️⃣ Create folder
     cm_dir = os.path.join(artifact_root, "confusion_matrix")
     os.makedirs(cm_dir, exist_ok=True)
 
-    # 2️⃣ Compute matrix
-    cm = confusion_matrix(y_true, y_pred)
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
 
-    # 3️⃣ Plot
     plt.figure(figsize=(6, 5))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False)
+    sns.heatmap(
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        cbar=False,
+        xticklabels=["Awake", "Drowsy"],
+        yticklabels=["Awake", "Drowsy"],
+    )
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
-    plt.title(f"Confusion Matrix Epoch {epoch}")
+    plt.title(f"Confusion Matrix - Epoch {epoch}")
 
-    # 4️⃣ Save figure
     cm_path = os.path.join(cm_dir, f"epoch_{epoch}_cm.png")
     plt.savefig(cm_path)
     plt.close()
-    print(f"Confusion matrix saved: {cm_path}")
+
+    print(f"Confusion matrix saved at: {cm_path}")
 
 
+# ============================================================
+# Training pipeline
+# ============================================================
 def run_training_pipeline(
     train_data_dir="datas/processed/train",
     test_data_dir="datas/processed/test",
@@ -42,7 +54,7 @@ def run_training_pipeline(
     num_epochs=20,
     model_name="drowsiness_cnn",
     device=None,
-    artifact_root="artifacts"
+    artifact_root="artifacts",
 ):
     try:
         # 1️⃣ Device
@@ -52,31 +64,36 @@ def run_training_pipeline(
         # 2️⃣ Artifact folders
         models_dir = os.path.join(artifact_root, "models")
         checkpoints_dir = os.path.join(artifact_root, "checkpoints")
+        cm_dir = os.path.join(artifact_root, "confusion_matrix")
+
         os.makedirs(models_dir, exist_ok=True)
         os.makedirs(checkpoints_dir, exist_ok=True)
-        os.makedirs(os.path.join(artifact_root, "confusion_matrix"), exist_ok=True)
+        os.makedirs(cm_dir, exist_ok=True)
 
-        # 3️⃣ W&B
+        # 3️⃣ W&B (NEW RUN EVERY TIME – NO CHART RESUME)
         wandb.init(
             project="Drowsiness-Detection-CNN",
-            name=f'Experiment-{datetime.now().strftime("%d_%m_%Y_%H_%M")}',
+            name=f"Experiment-{datetime.now().strftime('%d_%m_%Y_%H_%M')}",
+            resume=False,
+            reinit=True,
             config={
                 "epochs": num_epochs,
                 "batch_size": batch_size,
                 "learning_rate": learning_rate,
                 "model": "DrowsinessCNN",
-                "device": str(device)
-            }
+                "device": str(device),
+            },
         )
 
         # 4️⃣ Datasets
-        train_dataset = DrowsinessDataset(data_dir=train_data_dir, train=True)
-        val_dataset = DrowsinessDataset(data_dir=test_data_dir, train=False)
+        train_dataset = DrowsinessDataset(train_data_dir, train=True)
+        val_dataset = DrowsinessDataset(test_data_dir, train=False)
+
+        train_loader = get_dataloader(train_dataset, batch_size, shuffle=True)
+        val_loader = get_dataloader(val_dataset, batch_size, shuffle=False)
+
         print(f"Training samples: {len(train_dataset)}")
         print(f"Validation samples: {len(val_dataset)}")
-
-        train_loader = get_dataloader(train_dataset, batch_size=batch_size, shuffle=True)
-        val_loader = get_dataloader(val_dataset, batch_size=batch_size, shuffle=False)
 
         # 5️⃣ Model
         model = DrowsinessCNN(num_classes=2).to(device)
@@ -89,90 +106,100 @@ def run_training_pipeline(
             data=train_loader,
             model=model,
             model_path=model_name,
-            device=device
+            device=device,
         )
+
         evaluator = Evaluator(
             batch_size=batch_size,
             data=val_loader,
             model=model,
-            device=device
+            device=device,
         )
 
-        # 7️⃣ Resume checkpoint
-        latest_checkpoint_path = os.path.join(checkpoints_dir, "latest_checkpoint.pth")
+        # 7️⃣ Resume checkpoint (MODEL ONLY, NOT W&B)
+        latest_ckpt = os.path.join(checkpoints_dir, "latest_checkpoint.pth")
         start_epoch = 1
-        BEST_ACCURACY = 0
+        BEST_ACCURACY = 0.0
 
-        if os.path.exists(latest_checkpoint_path):
-            checkpoint = torch.load(latest_checkpoint_path, map_location=device)
-            model.load_state_dict(checkpoint["model_state_dict"])
-            trainer.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            start_epoch = checkpoint["epoch"] + 1
-            BEST_ACCURACY = checkpoint.get("best_accuracy", 0)
-            print(f"Resuming from epoch {start_epoch}, best accuracy: {BEST_ACCURACY:.2f}%")
+        if os.path.exists(latest_ckpt):
+            ckpt = torch.load(latest_ckpt, map_location=device)
+            model.load_state_dict(ckpt["model_state_dict"])
+            trainer.optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+            start_epoch = ckpt["epoch"] + 1
+            BEST_ACCURACY = ckpt.get("best_accuracy", 0.0)
+            print(f"Resuming training from epoch {start_epoch}")
 
         # 8️⃣ Epoch loop
         for epoch in range(start_epoch, num_epochs + 1):
             print(f"\n========== Epoch {epoch} ==========")
 
             # ---- Training ----
-            avg_train_loss, _, train_acc = trainer.start_training_loop(epoch)
+            train_out = trainer.start_training_loop(epoch)
+            if train_out is None:
+                print("⚠ Training failed, skipping epoch")
+                continue
+
+            avg_train_loss, _, train_acc = train_out
 
             # ---- Validation ----
             avg_val_loss, val_acc = evaluator.start_evaluation_loop(epoch)
 
-            # ---- Confusion matrix ----
-            all_labels = []
-            all_preds = []
-            for x, y in val_loader:
-                x = x.to(device)
-                y = y.to(device)
-                with torch.no_grad():
-                    preds = model(x)
-                    _, predicted = torch.max(preds, 1)
-                all_labels.extend(y.cpu().numpy())
-                all_preds.extend(predicted.cpu().numpy())
+            # ---- Confusion Matrix ----
+            all_labels, all_preds = [], []
+
+            model.eval()
+            with torch.no_grad():
+                for x, y in val_loader:
+                    x, y = x.to(device), y.to(device)
+                    outputs = model(x)
+                    _, preds = torch.max(outputs, 1)
+                    all_labels.extend(y.cpu().numpy())
+                    all_preds.extend(preds.cpu().numpy())
+
             save_confusion_matrix(all_labels, all_preds, epoch, artifact_root)
 
-            # ---- W&B log ----
-            wandb.log({
-                "epoch": epoch,
-                "train_loss": avg_train_loss,
-                "val_loss": avg_val_loss,
-                "train_accuracy": train_acc,
-                "val_accuracy": val_acc
-            })
+            # ---- W&B Log ----
+            wandb.log(
+                {
+                    "epoch": epoch,
+                    "train_loss": avg_train_loss,
+                    "val_loss": avg_val_loss,
+                    "train_accuracy": train_acc,
+                    "val_accuracy": val_acc,
+                }
+            )
 
-            # ---- Checkpoint ----
-            checkpoint = {
+            # ---- Save checkpoint ----
+            ckpt = {
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": trainer.optimizer.state_dict(),
-                "best_accuracy": BEST_ACCURACY
+                "best_accuracy": BEST_ACCURACY,
             }
-            torch.save(checkpoint, os.path.join(checkpoints_dir, f"checkpoint_epoch_{epoch}.pth"))
-            torch.save(checkpoint, latest_checkpoint_path)
+
+            torch.save(ckpt, os.path.join(checkpoints_dir, f"checkpoint_epoch_{epoch}.pth"))
+            torch.save(ckpt, latest_ckpt)
             print(f"Checkpoint saved for epoch {epoch}")
 
-            # ---- Best model ----
+            # ---- Save best model ----
             if val_acc > BEST_ACCURACY:
                 BEST_ACCURACY = val_acc
-                final_model_path = os.path.join(models_dir, f"{model_name}_best.pth")
-                torch.save(model.state_dict(), final_model_path)
-                wandb.save(final_model_path)
-                print(f"🔥 Best model updated (Accuracy: {val_acc:.2f}%) -> {final_model_path}")
+                best_model_path = os.path.join(models_dir, f"{model_name}_best.pth")
+                torch.save(model.state_dict(), best_model_path)
+                wandb.save(best_model_path)
+                print(f"🔥 Best model saved (Accuracy: {val_acc:.2f}%)")
 
-        print("Training pipeline completed successfully!")
+        print("Training completed successfully!")
         wandb.finish()
 
     except Exception as e:
-        print(f"Error in training pipeline: {e}")
+        print(f"❌ Error in training pipeline: {e}")
         raise e
 
 
-# ===============================
-# Run pipeline
-# ===============================
+# ============================================================
+# Run
+# ============================================================
 if __name__ == "__main__":
     wandb.login(key=os.environ.get("WANDB_API_KEY", None))
 
@@ -181,5 +208,5 @@ if __name__ == "__main__":
         learning_rate=0.001,
         num_epochs=20,
         model_name="drowsiness_cnn",
-        artifact_root="artifacts"
+        artifact_root="artifacts",
     )
