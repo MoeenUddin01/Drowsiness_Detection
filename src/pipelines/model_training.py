@@ -62,8 +62,7 @@ def main():
         train_loader, test_loader = get_dataloaders(
             batch_size=BATCH_SIZE, 
             num_workers=4,
-            train_dir='datas/processed/train',
-            test_dir='datas/processed/test'
+            
         )
 
         # ----------------------------
