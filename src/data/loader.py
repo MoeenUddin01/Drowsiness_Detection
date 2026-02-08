@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets
 from src.data.transforms import get_train_transform, get_test_transform  # Updated imports
 
-def get_datasets(train_dir='data/processed/train', test_dir='data/processed/test'):
+def get_datasets(train_dir='datas/processed/train', test_dir='datas/processed/test'):
     """
     Load training and testing datasets using ImageFolder and specified transforms.
     
