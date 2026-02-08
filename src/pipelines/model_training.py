@@ -1,30 +1,31 @@
 # src/pipelines/model_training.py
+
 import sys
 import os
+from datetime import datetime
+import torch
+import wandb
 
-# Add your project root to Python path
+# ----------------------------
+# Add project root to Python path
+# ----------------------------
 PROJECT_ROOT = "/content/Drowsiness_Detection"
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-import os
-from datetime import datetime
-
-
-import torch
-import wandb
+# ----------------------------
+# Imports from your project
+# ----------------------------
 from src.data.loader import get_dataloaders
 from src.model.cnn import CNN
 from src.model.train import Trainer
 from src.model.evaluation import Evaluator
 
 
-
-
 def main():
     try:
         # ----------------------------
-        # Google Drive paths (Drive already mounted manually)
+        # Google Drive paths (Drive already mounted manually in Colab)
         # ----------------------------
         BASE_DRIVE_PATH = "/content/drive/MyDrive/DrowsinessProject"
         os.makedirs(BASE_DRIVE_PATH, exist_ok=True)
@@ -65,7 +66,12 @@ def main():
         # ----------------------------
         # Load data
         # ----------------------------
-        train_loader, test_loader = get_dataloaders(batch_size=BATCH_SIZE, num_workers=4)
+        train_loader, test_loader = get_dataloaders(
+            batch_size=BATCH_SIZE,
+            num_workers=4,
+            train_dir="datas/processed/train",
+            test_dir="datas/processed/test"
+        )
 
         # ----------------------------
         # Initialize model
@@ -137,5 +143,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # Login W&B before starting
     wandb.login(key=os.environ.get("WANDB_API_KEY", None))
     main()
