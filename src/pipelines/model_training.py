@@ -6,8 +6,6 @@ from datetime import datetime
 import torch
 import wandb
 
-from google.colab import drive  # Only needed if using Colab
-
 from src.data.dataloader import get_dataloaders
 from src.models.cnn import CNN
 from src.models.trainer import Trainer
@@ -17,9 +15,8 @@ from src.models.evaluator import Evaluator
 def main():
     try:
         # ----------------------------
-        # Mount Google Drive & create folders
+        # Google Drive paths (Drive already mounted manually)
         # ----------------------------
-        drive.mount('/content/drive')
         BASE_DRIVE_PATH = "/content/drive/MyDrive/DrowsinessProject"
         os.makedirs(BASE_DRIVE_PATH, exist_ok=True)
 
@@ -76,8 +73,7 @@ def main():
             device=DEVICE,
             learning_rate=LEARNING_RATE,
             model_name="drowsiness_cnn",
-            checkpoint_dir=CHECKPOINT_DIR,
-            resume=True  # <-- Will resume from last checkpoint automatically
+            checkpoint_dir=CHECKPOINT_DIR
         )
 
         evaluator = Evaluator(model=model, data_loader=test_loader, device=DEVICE)
@@ -85,14 +81,14 @@ def main():
         best_accuracy = 0.0
 
         # ----------------------------
-        # Epoch loop (resumes if checkpoint exists)
+        # Epoch loop
         # ----------------------------
-        for epoch in range(trainer.start_epoch, EPOCHS):
+        for epoch in range(1, EPOCHS + 1):
             # Training
-            train_loss, train_acc = trainer.train_one_epoch(epoch=epoch)
+            train_loss, _, train_acc = trainer.train_one_epoch(epoch=epoch)
 
             # Validation
-            val_loss, val_acc = evaluator.evaluate(epoch=epoch)
+            val_loss, _, val_acc = evaluator.evaluate(epoch=epoch)
 
             # Log metrics to W&B
             wandb.log({
@@ -106,9 +102,10 @@ def main():
             # Save best checkpoint during training
             if val_acc > best_accuracy:
                 best_accuracy = val_acc
-                checkpoint_path = trainer.save_model(epoch)
+                checkpoint_path = trainer.save_model()
                 if checkpoint_path:
                     print(f"Best model checkpoint saved at Epoch {epoch} with Accuracy {val_acc:.2f}%")
+                    # Optional: log checkpoint to W&B
                     artifact = wandb.Artifact("drowsiness_cnn_checkpoint", type="model")
                     artifact.add_file(checkpoint_path)
                     wandb.log_artifact(artifact)
