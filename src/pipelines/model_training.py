@@ -1,15 +1,23 @@
 # src/pipelines/model_training.py
+import sys
+import os
+
+# Add your project root to Python path
+PROJECT_ROOT = "/content/Drowsiness_Detection"
+if PROJECT_ROOT not in sys.path:
+    sys.path.append(PROJECT_ROOT)
 
 import os
 from datetime import datetime
 
+
 import torch
 import wandb
-
 from src.data.dataloader import get_dataloaders
 from src.models.cnn import CNN
 from src.models.trainer import Trainer
 from src.models.evaluator import Evaluator
+
 
 
 def main():
