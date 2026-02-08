@@ -1,6 +1,7 @@
 # src/models/evaluator.py
 
 import torch
+import wandb
 from torch.utils.data import DataLoader
 
 
@@ -62,6 +63,17 @@ class Evaluator:
             # Compute average loss and accuracy
             avg_loss = sum(batch_losses) / len(batch_losses) if batch_losses else 0.0
             accuracy = 100.0 * correct / total if total > 0 else 0.0
+
+            # Log validation metrics to W&B (per-epoch)
+            try:
+                if wandb.run is not None:
+                    wandb.log({
+                        "Validation Loss": avg_loss,
+                        "Validation Accuracy": accuracy,
+                        "Epoch": epoch
+                    }, step=epoch)
+            except Exception:
+                pass
 
             print(f"[Epoch {epoch}] Average Validation Loss: {avg_loss:.4f}")
             print(f"[Epoch {epoch}] Validation Accuracy: {accuracy:.2f}%")

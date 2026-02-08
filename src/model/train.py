@@ -1,5 +1,6 @@
 import os
 import torch
+import wandb
 from torch.utils.data import DataLoader
 
 
@@ -65,6 +66,25 @@ class Trainer:
             _, predicted = torch.max(outputs, 1)
             total += labels.size(0)
             correct += (predicted == labels).sum().item()
+
+            # Log per-batch training metrics to W&B (if active)
+            try:
+                if wandb.run is not None:
+                    # global step across epochs
+                    try:
+                        num_batches = len(self.data_loader)
+                    except Exception:
+                        num_batches = batch_idx + 1
+                    global_step = (epoch - 1) * num_batches + batch_idx
+                    running_acc = 100.0 * correct / total if total > 0 else 0.0
+                    wandb.log({
+                        "Training Loss": loss.item(),
+                        "Training Accuracy": running_acc,
+                        "Epoch": epoch,
+                        "Batch": batch_idx
+                    }, step=global_step)
+            except Exception:
+                pass
 
             if batch_idx % log_every == 0:
                 print(f"[Epoch {epoch}] Batch {batch_idx}: Loss = {loss.item():.4f}")
