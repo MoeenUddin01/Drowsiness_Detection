@@ -106,14 +106,14 @@ def main():
             print(f"[Epoch {epoch}] Validation Loss: {val_loss:.4f}, Validation Acc: {val_acc:.2f}%")
 
             # ----------------------------
-            # Log metrics to W&B and flush so charts update live
+            # Log epoch-level metrics to W&B (consistent metric names)
             # ----------------------------
             wandb.log({
-                "Training Loss": train_loss,
-                "Validation Loss": val_loss,
-                "Training Accuracy": train_acc,
-                "Validation Accuracy": val_acc,
-                "Epoch": epoch
+                "train/loss": train_loss,
+                "train/accuracy": train_acc,
+                "val/loss": val_loss,
+                "val/accuracy": val_acc,
+                "epoch": epoch
             }, step=epoch)
             try:
                 wandb.flush()

@@ -68,9 +68,9 @@ class Evaluator:
             try:
                 if wandb.run is not None:
                     wandb.log({
-                        "Validation Loss": avg_loss,
-                        "Validation Accuracy": accuracy,
-                        "Epoch": epoch
+                        "val/loss": avg_loss,
+                        "val/accuracy": accuracy,
+                        "epoch": epoch
                     }, step=epoch)
             except Exception:
                 pass
