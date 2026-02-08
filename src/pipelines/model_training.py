@@ -1,5 +1,4 @@
 # src/pipelines/model_training.py
-#everthing is good in this 
 import sys
 import os
 from datetime import datetime
@@ -63,7 +62,7 @@ def main():
         # ----------------------------
         train_loader, test_loader = get_dataloaders(
             batch_size=BATCH_SIZE,
-            num_workers=2  # Avoid overload warnings in Colab
+            num_workers=2
         )
 
         # ----------------------------
@@ -93,10 +92,10 @@ def main():
         # ----------------------------
         for epoch in range(1, EPOCHS + 1):
             # Training
-            train_loss, train_acc = trainer.train_one_epoch(epoch=epoch)  # <-- matches return values
+            train_loss, train_acc = trainer.train_one_epoch(epoch=epoch)
 
             # Validation
-            val_loss, val_acc = evaluator.evaluate(epoch=epoch)  # <-- matches return values
+            val_loss, val_acc = evaluator.evaluate(epoch=epoch)
 
             print(f"[Epoch {epoch}] Training Loss: {train_loss:.4f}, Training Acc: {train_acc:.2f}%")
             print(f"[Epoch {epoch}] Validation Loss: {val_loss:.4f}, Validation Acc: {val_acc:.2f}%")
@@ -113,31 +112,38 @@ def main():
             })
 
             # ----------------------------
-            # Save best checkpoint during training
+            # Save model to W&B ONLY (every epoch)
+            # ----------------------------
+            epoch_model_filename = f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}.pth"
+            torch.save({"model_state_dict": model.state_dict()}, epoch_model_filename)
+
+            artifact = wandb.Artifact(
+                name=f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}",
+                type="model"
+            )
+            artifact.add_file(epoch_model_filename)
+            wandb.log_artifact(artifact)
+            print(f"Epoch {epoch} model logged to W&B as artifact")
+
+            # Remove the temporary local file to avoid clutter
+            os.remove(epoch_model_filename)
+
+            # ----------------------------
+            # Save best model to Drive ONLY
             # ----------------------------
             if val_acc > best_accuracy:
                 best_accuracy = val_acc
-                checkpoint_path = trainer.save_model(epoch=epoch)
-                if checkpoint_path:
-                    print(f"Best model checkpoint saved at Epoch {epoch} with Accuracy {val_acc:.2f}%")
-                    
-                    # Also save best model to final model directory
-                    best_model_path = os.path.join(FINAL_MODEL_DIR, "drowsiness_cnn_best.pth")
-                    torch.save({"model_state_dict": model.state_dict()}, best_model_path)
-                    print(f"Best model also saved to: {best_model_path}")
-                    
-                    artifact = wandb.Artifact("drowsiness_cnn_checkpoint", type="model")
-                    artifact.add_file(checkpoint_path)
-                    wandb.log_artifact(artifact)
+                best_model_path = os.path.join(FINAL_MODEL_DIR, "drowsiness_cnn_best.pth")
+                torch.save({"model_state_dict": model.state_dict()}, best_model_path)
+                print(f"Best model updated at Epoch {epoch} with Validation Accuracy {val_acc:.2f}%")
 
         # ----------------------------
-        # Save final model after all epochs
+        # Save final model (optional) to W&B
         # ----------------------------
         final_model_path = os.path.join(FINAL_MODEL_DIR, "drowsiness_cnn_final.pth")
         torch.save({"model_state_dict": model.state_dict()}, final_model_path)
         print(f"Final model saved at: {final_model_path}")
 
-        # Optional: log final model to W&B
         final_artifact = wandb.Artifact("drowsiness_cnn_final", type="model")
         final_artifact.add_file(final_model_path)
         wandb.log_artifact(final_artifact)
@@ -148,6 +154,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # Login to W&B using environment variable if available
     wandb.login(key=os.environ.get("WANDB_API_KEY", None))
     main()
