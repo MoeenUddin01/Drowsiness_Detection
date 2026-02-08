@@ -1,26 +1,37 @@
 # src/pipelines/model_training.py
 
+
+# from src.data.loader import get_dataloaders
+# from src.model.cnn import CNN
+# from src.model.train import Trainer
+# from src.model.evaluation import Evaluator
+
+
+# src/pipelines/model_training.py
+
 import sys
 import os
 from datetime import datetime
-import torch
-import wandb
 
-# Add project root to path
+# ----------------------------
+# Add project root to sys.path
+# ----------------------------
 PROJECT_ROOT = "/content/Drowsiness_Detection"
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-from src.data.loader import get_dataloaders
-from src.model.cnn import CNN
-from src.model.train import Trainer
-from src.model.evaluation import Evaluator
+import torch
+import wandb
+from src.data.dataloader import get_dataloaders
+from src.models.cnn import CNN
+from src.models.trainer import Trainer
+from src.models.evaluator import Evaluator
 
 
 def main():
     try:
         # ----------------------------
-        # Google Drive paths (Drive already mounted manually)
+        # Google Drive paths (already mounted)
         # ----------------------------
         BASE_DRIVE_PATH = "/content/drive/MyDrive/DrowsinessProject"
         os.makedirs(BASE_DRIVE_PATH, exist_ok=True)
@@ -60,9 +71,10 @@ def main():
         # Load data
         # ----------------------------
         train_loader, test_loader = get_dataloaders(
-            batch_size=BATCH_SIZE, 
+            batch_size=BATCH_SIZE,
             num_workers=4,
-            
+            train_dir='datas/processed/train',
+            test_dir='datas/processed/test'
         )
 
         # ----------------------------
@@ -123,6 +135,7 @@ def main():
         torch.save({"model_state_dict": model.state_dict()}, final_model_path)
         print(f"Final model saved at: {final_model_path}")
 
+        # Optional: log final model to W&B
         final_artifact = wandb.Artifact("drowsiness_cnn_final", type="model")
         final_artifact.add_file(final_model_path)
         wandb.log_artifact(final_artifact)
@@ -133,5 +146,6 @@ def main():
 
 
 if __name__ == "__main__":
+    # Use WANDB_API_KEY env variable or login manually
     wandb.login(key=os.environ.get("WANDB_API_KEY", None))
     main()
