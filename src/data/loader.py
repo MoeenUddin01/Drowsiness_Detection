@@ -2,7 +2,7 @@
 
 from torch.utils.data import DataLoader
 from torchvision import datasets
-from src.data.transforms import train_transform, test_transform
+from src.data.transforms import get_train_transform, get_test_transform  # Updated imports
 
 def get_datasets(train_dir='data/processed/train', test_dir='data/processed/test'):
     """
@@ -15,8 +15,8 @@ def get_datasets(train_dir='data/processed/train', test_dir='data/processed/test
     Returns:
         train_dataset, test_dataset: PyTorch ImageFolder datasets
     """
-    train_dataset = datasets.ImageFolder(root=train_dir, transform=train_transform)
-    test_dataset = datasets.ImageFolder(root=test_dir, transform=test_transform)
+    train_dataset = datasets.ImageFolder(root=train_dir, transform=get_train_transform())
+    test_dataset = datasets.ImageFolder(root=test_dir, transform=get_test_transform())
     
     return train_dataset, test_dataset
 
