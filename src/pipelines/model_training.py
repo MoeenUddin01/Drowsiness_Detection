@@ -120,6 +120,12 @@ def main():
                 checkpoint_path = trainer.save_model(epoch=epoch)
                 if checkpoint_path:
                     print(f"Best model checkpoint saved at Epoch {epoch} with Accuracy {val_acc:.2f}%")
+                    
+                    # Also save best model to final model directory
+                    best_model_path = os.path.join(FINAL_MODEL_DIR, "drowsiness_cnn_best.pth")
+                    torch.save({"model_state_dict": model.state_dict()}, best_model_path)
+                    print(f"Best model also saved to: {best_model_path}")
+                    
                     artifact = wandb.Artifact("drowsiness_cnn_checkpoint", type="model")
                     artifact.add_file(checkpoint_path)
                     wandb.log_artifact(artifact)
