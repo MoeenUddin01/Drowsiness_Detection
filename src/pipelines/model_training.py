@@ -1,4 +1,3 @@
-
 # src/pipelines/model_training.py
 
 import sys
@@ -23,7 +22,7 @@ from src.model.evaluation import Evaluator
 def main():
     try:
         # ----------------------------
-        # Google Drive paths (already mounted)
+        # Paths (Google Drive already mounted manually)
         # ----------------------------
         BASE_DRIVE_PATH = "/content/drive/MyDrive/DrowsinessProject"
         os.makedirs(BASE_DRIVE_PATH, exist_ok=True)
@@ -64,7 +63,7 @@ def main():
         # ----------------------------
         train_loader, test_loader = get_dataloaders(
             batch_size=BATCH_SIZE,
-            num_workers=4
+            num_workers=2  # Avoid overload warnings in Colab
         )
 
         # ----------------------------
@@ -94,12 +93,17 @@ def main():
         # ----------------------------
         for epoch in range(1, EPOCHS + 1):
             # Training
-            train_loss, _, train_acc = trainer.train_one_epoch(epoch=epoch)
+            train_loss, train_acc = trainer.train_one_epoch(epoch=epoch)  # <-- matches return values
 
             # Validation
-            val_loss, _, val_acc = evaluator.evaluate(epoch=epoch)
+            val_loss, val_acc = evaluator.evaluate(epoch=epoch)  # <-- matches return values
 
+            print(f"[Epoch {epoch}] Training Loss: {train_loss:.4f}, Training Acc: {train_acc:.2f}%")
+            print(f"[Epoch {epoch}] Validation Loss: {val_loss:.4f}, Validation Acc: {val_acc:.2f}%")
+
+            # ----------------------------
             # Log metrics to W&B
+            # ----------------------------
             wandb.log({
                 "Training Loss": train_loss,
                 "Validation Loss": val_loss,
@@ -108,10 +112,12 @@ def main():
                 "Epoch": epoch
             })
 
+            # ----------------------------
             # Save best checkpoint during training
+            # ----------------------------
             if val_acc > best_accuracy:
                 best_accuracy = val_acc
-                checkpoint_path = trainer.save_model()
+                checkpoint_path = trainer.save_model(epoch=epoch)
                 if checkpoint_path:
                     print(f"Best model checkpoint saved at Epoch {epoch} with Accuracy {val_acc:.2f}%")
                     artifact = wandb.Artifact("drowsiness_cnn_checkpoint", type="model")
@@ -136,6 +142,6 @@ def main():
 
 
 if __name__ == "__main__":
-    # Use WANDB_API_KEY env variable or login manually
+    # Login to W&B using environment variable if available
     wandb.login(key=os.environ.get("WANDB_API_KEY", None))
     main()

@@ -92,8 +92,10 @@ class Trainer:
                 path
             )
             print(f"Checkpoint saved at: {path}")
+            return path
         except Exception as e:
             print(f"Error saving checkpoint: {e}")
+            return None
 
     # ----------------------------
     # LOAD CHECKPOINT
