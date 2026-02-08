@@ -6,35 +6,28 @@ from datetime import datetime
 import torch
 import wandb
 
-# ----------------------------
-# Add project root to Python path
-# ----------------------------
+# Add project root to path
 PROJECT_ROOT = "/content/Drowsiness_Detection"
 if PROJECT_ROOT not in sys.path:
     sys.path.append(PROJECT_ROOT)
 
-# ----------------------------
-# Imports from your project
-# ----------------------------
-from src.data.loader import get_dataloaders
-from src.model.cnn import CNN
-from src.model.train import Trainer
-from src.model.evaluation import Evaluator
+from src.data.dataloader import get_dataloaders
+from src.models.cnn import CNN
+from src.models.trainer import Trainer
+from src.models.evaluator import Evaluator
 
 
 def main():
     try:
         # ----------------------------
-        # Google Drive paths (Drive already mounted manually in Colab)
+        # Google Drive paths (Drive already mounted manually)
         # ----------------------------
         BASE_DRIVE_PATH = "/content/drive/MyDrive/DrowsinessProject"
         os.makedirs(BASE_DRIVE_PATH, exist_ok=True)
 
-        # Folder for checkpoints (during training)
         CHECKPOINT_DIR = os.path.join(BASE_DRIVE_PATH, "artifacts", "checkpoints")
         os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
-        # Folder for final model (after training)
         FINAL_MODEL_DIR = os.path.join(BASE_DRIVE_PATH, "artifacts", "model")
         os.makedirs(FINAL_MODEL_DIR, exist_ok=True)
 
@@ -67,10 +60,10 @@ def main():
         # Load data
         # ----------------------------
         train_loader, test_loader = get_dataloaders(
-            batch_size=BATCH_SIZE,
+            batch_size=BATCH_SIZE, 
             num_workers=4,
-            train_dir="datas/processed/train",
-            test_dir="datas/processed/test"
+            train_dir='datas/processed/train',
+            test_dir='datas/processed/test'
         )
 
         # ----------------------------
@@ -120,7 +113,6 @@ def main():
                 checkpoint_path = trainer.save_model()
                 if checkpoint_path:
                     print(f"Best model checkpoint saved at Epoch {epoch} with Accuracy {val_acc:.2f}%")
-                    # Optional: log checkpoint to W&B
                     artifact = wandb.Artifact("drowsiness_cnn_checkpoint", type="model")
                     artifact.add_file(checkpoint_path)
                     wandb.log_artifact(artifact)
@@ -132,7 +124,6 @@ def main():
         torch.save({"model_state_dict": model.state_dict()}, final_model_path)
         print(f"Final model saved at: {final_model_path}")
 
-        # Optional: log final model to W&B
         final_artifact = wandb.Artifact("drowsiness_cnn_final", type="model")
         final_artifact.add_file(final_model_path)
         wandb.log_artifact(final_artifact)
@@ -143,6 +134,5 @@ def main():
 
 
 if __name__ == "__main__":
-    # Login W&B before starting
     wandb.login(key=os.environ.get("WANDB_API_KEY", None))
     main()
