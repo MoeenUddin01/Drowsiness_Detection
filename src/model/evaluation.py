@@ -77,8 +77,8 @@ class Evaluator:
 # Quick local / Colab test
 # ----------------------------
 if __name__ == "__main__":
-    from src.data.dataloader import get_dataloaders
-    from src.models.cnn import CNN
+    from src.data.loader import get_dataloaders
+    from src.model.cnn import CNN
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     _, test_loader = get_dataloaders(batch_size=16, num_workers=1)

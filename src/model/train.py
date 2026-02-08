@@ -117,8 +117,8 @@ class Trainer:
 # Quick local / Colab test
 # ----------------------------
 if __name__ == "__main__":
-    from src.data.dataloader import get_dataloaders
-    from src.models.cnn import CNN
+    from src.data.loader import get_dataloaders
+    from src.model.cnn import CNN
 
     try:
         from google.colab import drive

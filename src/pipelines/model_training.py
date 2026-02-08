@@ -13,10 +13,11 @@ from datetime import datetime
 
 import torch
 import wandb
-from src.data.dataloader import get_dataloaders
-from src.models.cnn import CNN
-from src.models.trainer import Trainer
-from src.models.evaluator import Evaluator
+from src.data.loader import get_dataloaders
+from src.model.cnn import CNN
+from src.model.train import Trainer
+from src.model.evaluation import Evaluator
+
 
 
 
