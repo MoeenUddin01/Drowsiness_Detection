@@ -1,51 +1,146 @@
+import os
 import torch
 from torch.utils.data import DataLoader
-import os
+
 
 class Trainer:
-    def __init__(self, batch_size:int, learning_rate:float, data:DataLoader, model, model_path:str, device:str):
-        self.batch_size = batch_size
-        self.data = data
-        self.model = model
-        self.lr = learning_rate
-        self.device = device
-        self.loss_fn = torch.nn.CrossEntropyLoss()
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.model_directory = "artifacts/models"
-        os.makedirs(self.model_directory, exist_ok=True)
-        self.model_path = model_path
+    """
+    Trainer class for training a PyTorch model.
+    Handles training loop, loss calculation, optimizer, accuracy,
+    checkpoint saving, and resume training.
+    """
 
-    def train_epoch(self, epoch:int):
+    def __init__(
+        self,
+        model: torch.nn.Module,
+        data_loader: DataLoader,
+        device: str = "cuda",
+        learning_rate: float = 1e-3,
+        model_name: str = "model",
+        checkpoint_dir: str = None,
+        resume: bool = True
+    ):
+        self.model = model.to(device)
+        self.data_loader = data_loader
+        self.device = device
+        self.criterion = torch.nn.CrossEntropyLoss()
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
+        self.model_name = model_name
+        self.start_epoch = 0
+
+        # ----------------------------
+        # Checkpoint directory
+        # ----------------------------
+        if checkpoint_dir is None:
+            self.model_directory = "models"
+        else:
+            self.model_directory = checkpoint_dir
+
+        os.makedirs(self.model_directory, exist_ok=True)
+
+        # ----------------------------
+        # Resume from checkpoint if exists
+        # ----------------------------
+        if resume:
+            self.load_checkpoint()
+
+    def train_one_epoch(self, epoch: int, log_every: int = 5):
         self.model.train()
-        total_loss = 0.0
+        batch_losses = []
         correct = 0
         total = 0
 
-        for batch_idx, (x, y) in enumerate(self.data):
-            x = x.to(self.device)
-            y = y.to(self.device)
+        for batch_idx, (inputs, labels) in enumerate(self.data_loader):
+            inputs = inputs.to(self.device)
+            labels = labels.to(self.device)
+
+            outputs = self.model(inputs)
+            loss = self.criterion(outputs, labels)
+            batch_losses.append(loss.item())
 
             self.optimizer.zero_grad()
-            logits = self.model(x)  # raw logits, do NOT apply softmax
-            loss = self.loss_fn(logits, y)
             loss.backward()
             self.optimizer.step()
 
-            total_loss += loss.item() * x.size(0)  # accumulate weighted by batch size
-            _, predicted = torch.max(logits, 1)
-            correct += (predicted == y).sum().item()
-            total += y.size(0)
+            _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
 
-            if batch_idx % 5 == 0:
-                print(f"Training-> Epoch {epoch} -> Batch {batch_idx}: Loss={loss.item():.4f}")
+            if batch_idx % log_every == 0:
+                print(f"[Epoch {epoch}] Batch {batch_idx}: Loss = {loss.item():.4f}")
 
-        avg_loss = total_loss / total
-        acc = 100.0 * correct / total if total > 0 else 0.0
-        print(f"Epoch {epoch} -> Avg Loss: {avg_loss:.4f}, Accuracy: {acc:.2f}%")
-        return avg_loss, acc
+        avg_loss = sum(batch_losses) / len(batch_losses)
+        accuracy = 100.0 * correct / total
 
-    def save_model(self):
-        path = os.path.join(self.model_directory, f"{self.model_path}.pth")
-        torch.save(self.model.state_dict(), path)
-        print(f"Model saved at {path}")
-        return path
+        print(f"[Epoch {epoch}] Average Loss: {avg_loss:.4f}")
+        print(f"[Epoch {epoch}] Accuracy: {accuracy:.2f}%")
+
+        return avg_loss, accuracy
+
+    # ----------------------------
+    # SAVE CHECKPOINT
+    # ----------------------------
+    def save_model(self, epoch: int):
+        try:
+            path = os.path.join(self.model_directory, f"{self.model_name}.pth")
+            torch.save(
+                {
+                    "epoch": epoch,
+                    "model_state_dict": self.model.state_dict(),
+                    "optimizer_state_dict": self.optimizer.state_dict(),
+                },
+                path
+            )
+            print(f"Checkpoint saved at: {path}")
+        except Exception as e:
+            print(f"Error saving checkpoint: {e}")
+
+    # ----------------------------
+    # LOAD CHECKPOINT
+    # ----------------------------
+    def load_checkpoint(self):
+        path = os.path.join(self.model_directory, f"{self.model_name}.pth")
+
+        if not os.path.exists(path):
+            print("No checkpoint found. Training from scratch.")
+            return
+
+        checkpoint = torch.load(path, map_location=self.device)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.start_epoch = checkpoint["epoch"] + 1
+
+        print(f"Resumed training from epoch {self.start_epoch}")
+
+
+# ----------------------------
+# Quick local / Colab test
+# ----------------------------
+if __name__ == "__main__":
+    from src.data.dataloader import get_dataloaders
+    from src.models.cnn import CNN
+
+    try:
+        from google.colab import drive
+        drive.mount("/content/drive")
+        CHECKPOINT_DIR = "/content/drive/MyDrive/DrowsinessProject/artifacts/checkpoints"
+        os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+    except:
+        CHECKPOINT_DIR = None
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    train_loader, _ = get_dataloaders(batch_size=16, num_workers=1)
+    model = CNN(num_classes=13)
+
+    trainer = Trainer(
+        model=model,
+        data_loader=train_loader,
+        device=device,
+        model_name="drowsiness_cnn",
+        checkpoint_dir=CHECKPOINT_DIR
+    )
+
+    EPOCHS = 10
+    for epoch in range(trainer.start_epoch, EPOCHS):
+        trainer.train_one_epoch(epoch)
+        trainer.save_model(epoch)
