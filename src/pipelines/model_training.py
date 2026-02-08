@@ -70,6 +70,11 @@ def main():
         # ----------------------------
         model = CNN(num_classes=13).to(DEVICE)
         print("Using device:", DEVICE)
+        # Watch the model so W&B receives gradients/parameters and keeps live charts updated
+        try:
+            wandb.watch(model, log="all", log_freq=100)
+        except Exception as e:
+            print(f"W&B watch failed: {e}")
 
         # ----------------------------
         # Initialize Trainer & Evaluator
@@ -101,7 +106,7 @@ def main():
             print(f"[Epoch {epoch}] Validation Loss: {val_loss:.4f}, Validation Acc: {val_acc:.2f}%")
 
             # ----------------------------
-            # Log metrics to W&B
+            # Log metrics to W&B and flush so charts update live
             # ----------------------------
             wandb.log({
                 "Training Loss": train_loss,
@@ -109,7 +114,11 @@ def main():
                 "Training Accuracy": train_acc,
                 "Validation Accuracy": val_acc,
                 "Epoch": epoch
-            })
+            }, step=epoch)
+            try:
+                wandb.flush()
+            except Exception:
+                pass
 
             # ----------------------------
             # Save model to W&B ONLY (every epoch)
