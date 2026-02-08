@@ -1,11 +1,3 @@
-# src/pipelines/model_training.py
-
-
-# from src.data.loader import get_dataloaders
-# from src.model.cnn import CNN
-# from src.model.train import Trainer
-# from src.model.evaluation import Evaluator
-
 
 # src/pipelines/model_training.py
 
@@ -22,10 +14,10 @@ if PROJECT_ROOT not in sys.path:
 
 import torch
 import wandb
-from src.data.dataloader import get_dataloaders
-from src.models.cnn import CNN
-from src.models.trainer import Trainer
-from src.models.evaluator import Evaluator
+from src.data.loader import get_dataloaders
+from src.model.cnn import CNN
+from src.model.train import Trainer
+from src.model.evaluation import Evaluator
 
 
 def main():
