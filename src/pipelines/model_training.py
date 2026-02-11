@@ -68,6 +68,11 @@ def main():
             batch_size=BATCH_SIZE,
             num_workers=2
         )
+        # Determine number of batches to compute consistent global step values
+        try:
+            NUM_BATCHES = len(train_loader)
+        except Exception:
+            NUM_BATCHES = None
         
         # Auto-detect number of classes from data
         NUM_CLASSES = len(class_names)
@@ -126,7 +131,16 @@ def main():
                 "Validation Accuracy": val_acc,
                 "epoch": epoch
             }
-            wandb.log(metrics, step=epoch)
+            # Use a global step consistent with per-batch logging so charts update live
+            try:
+                step_val = epoch * NUM_BATCHES if NUM_BATCHES else epoch
+                wandb.log(metrics, step=step_val)
+            except Exception:
+                # fallback to default logging if wandb not available or step fails
+                try:
+                    wandb.log(metrics)
+                except Exception:
+                    pass
             print(f"✅ Logged to W&B - Epoch {epoch}\n")
 
             # ----------------------------
