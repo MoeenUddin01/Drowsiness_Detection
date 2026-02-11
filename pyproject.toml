@@ -16,5 +16,6 @@ dependencies = [
     "wandb>=0.23.1",
     "seaborn",
     "scikit-learn",
-    "opencv-python"
+    "opencv-python",
+    "python-multipart>=0.0.22",
 ]

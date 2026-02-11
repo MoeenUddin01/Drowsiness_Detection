@@ -7,25 +7,27 @@ import torchvision.transforms as transforms
 from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import JSONResponse, StreamingResponse
 from PIL import Image
+import sys
+from pathlib import Path
+
+# Add parent directory to path so we can import src
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 from src.model.cnn import CNN  # import your trained CNN
 
 # -----------------------------
 # CONFIG
 # -----------------------------
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL_PATH = "/home/moeenuddin/Desktop/Deep_learning/drowsiness_detection/Drowsiness_Detection/artifacts/models/drowsiness_epoch5_train94.50_val93.12.pth"
+MODEL_PATH = "/home/moeenuddin/Desktop/Deep_learning/drowsiness_detection/Drowsiness_Detection/artifacts/models/drowsiness_epoch10_train97.66_val94.00.pth"
 IMAGE_SIZE = 128
-MODEL_NUM_CLASSES = 13  # Model trained with 13 classes
+MODEL_NUM_CLASSES = 2  # Model trained with 2 classes: Closed (Drowsy) and Opened (Awake)
 
-# Class names: Your model outputs probabilities for 13 classes
-# We interpret: majority of classes (7-12) = Closed/Drowsy, minority (0-6) = Open/Awake
-CLASS_NAMES_2 = ["Awake", "Drowsy"]
-
-# Class mapping: Sum probabilities
-# Classes 0-6: Awake (open eyes)
-# Classes 7-12: Drowsy (closed eyes)
-AWAKE_CLASSES = list(range(7))
-DROWSY_CLASSES = list(range(7, 13))
+# Class names mapping
+# Class 0: "Closed" (eyes closed = Drowsy)
+# Class 1: "Opened" (eyes open = Awake)
+CLASS_NAMES = ["Closed", "Opened"]
+CLASS_DISPLAY_2 = ["😴 Drowsy", "😊 Awake"]
 
 # -----------------------------
 # IMAGE TRANSFORMS (matching training transforms)
@@ -46,19 +48,17 @@ transform_simple = transforms.Compose([
 # # Alternative: If model classes represent a spectrum, use confidence threshold
 def predict_drowsiness(probabilities):
     """
-    Predict Awake (0) or Drowsy (1) by summing class probabilities
+    Predict Closed (0 / Drowsy) or Opened (1 / Awake) from 2-class model
     Args:
-        probabilities: torch tensor of shape [1, 13]
+        probabilities: torch tensor of shape [1, 2]
     Returns:
         class_idx (0 or 1), confidence score
     """
-    awake_prob = probabilities[0, AWAKE_CLASSES].sum().item()
-    drowsy_prob = probabilities[0, DROWSY_CLASSES].sum().item()
+    probs = probabilities[0].cpu()  # Move to CPU for processing
+    confidence = probs.max().item()
+    class_idx = probs.argmax().item()
     
-    if drowsy_prob > awake_prob:
-        return 1, drowsy_prob / (awake_prob + drowsy_prob)
-    else:
-        return 0, awake_prob / (awake_prob + drowsy_prob)
+    return class_idx, confidence
 
 # -----------------------------
 # LOAD MODEL
@@ -71,14 +71,6 @@ else:
     model.load_state_dict(checkpoint)
 model.eval()
 print("✅ Model loaded and ready!")
-
-# -----------------------------
-# IMAGE TRANSFORMS
-# -----------------------------
-transform = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.ToTensor(),
-])
 
 # -----------------------------
 # FASTAPI APP
@@ -232,13 +224,17 @@ HTML_UI = """
         function displayResult(data) {
             const predClass = data.prediction.toLowerCase();
             const resultDiv = document.getElementById('uploadResult');
+            const emoji = predClass === 'opened' ? '😊' : '😴';
+            const status = predClass === 'opened' ? 'Awake' : 'Drowsy';
+            const styleClass = predClass === 'opened' ? 'awake' : 'drowsy';
+            
             resultDiv.innerHTML = `
-                <div class="prediction ${predClass}">
-                    ${predClass === 'awake' ? '😊 Awake' : '😴 Drowsy'}
+                <div class="prediction ${styleClass}">
+                    ${emoji} ${status}
                 </div>
                 <div class="confidence">
                     <strong>Confidence:</strong> ${(data.confidence * 100).toFixed(2)}%<br>
-                    <strong>Model Output:</strong> Class ${data.model_output_class}
+                    <strong>Model Class:</strong> ${data.prediction} (Class ${data.class_index})
                 </div>
             `;
             resultDiv.classList.add('show');
@@ -284,14 +280,14 @@ async def predict_image(file: UploadFile = File(...)):
             outputs = model(input_tensor)
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
         
-        # Predict using summed probabilities
-        label_idx, confidence = predict_drowsiness(probabilities)
+        # Predict using 2-class model
+        class_idx, confidence = predict_drowsiness(probabilities)
 
         return JSONResponse({
-            "prediction": CLASS_NAMES_2[label_idx],
-            "class_index": label_idx,
+            "prediction": CLASS_NAMES[class_idx],
+            "class_index": class_idx,
             "confidence": round(float(confidence), 4),
-            "status": "Drowsy" if label_idx == 1 else "Awake"
+            "display_status": CLASS_DISPLAY_2[class_idx]
         })
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
@@ -319,11 +315,12 @@ def webcam_stream():
             outputs = model(input_tensor)
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
         
-        # Predict using summed probabilities
-        label_idx, _ = predict_drowsiness(probabilities)
-        label = CLASS_NAMES_2[label_idx]
-        color = (0, 255, 0) if label == "Awake" else (0, 0, 255)
-        cv2.putText(frame, f"Status: {label}", (20, 40),
+        # Predict using 2-class model
+        class_idx, _ = predict_drowsiness(probabilities)
+        label = CLASS_NAMES[class_idx]
+        display_label = CLASS_DISPLAY_2[class_idx]
+        color = (0, 255, 0) if class_idx == 1 else (0, 0, 255)  # Green for Opened, Red for Closed
+        cv2.putText(frame, f"Status: {display_label}", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
 
         ret, buffer = cv2.imencode(".jpg", frame)
@@ -342,3 +339,11 @@ def webcam_feed():
         webcam_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame"
     )
+
+
+# -----------------------------
+# RUN DIRECTLY
+# -----------------------------
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
