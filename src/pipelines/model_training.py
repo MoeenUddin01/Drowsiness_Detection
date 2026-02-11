@@ -117,19 +117,17 @@ def main():
             print(f"[Epoch {epoch}] Validation Loss: {val_loss:.4f}, Validation Acc: {val_acc:.2f}%")
 
             # ----------------------------
-            # Log epoch-level metrics to W&B (consistent metric names)
+            # Log ALL 4 metrics to W&B with clean names
             # ----------------------------
-            wandb.log({
-                "train/loss": train_loss,
-                "train/accuracy": train_acc,
-                "val/loss": val_loss,
-                "val/accuracy": val_acc,
+            metrics = {
+                "Training Loss": train_loss,
+                "Training Accuracy": train_acc,
+                "Validation Loss": val_loss,
+                "Validation Accuracy": val_acc,
                 "epoch": epoch
-            }, step=epoch)
-            try:
-                wandb.flush()
-            except Exception:
-                pass
+            }
+            wandb.log(metrics, step=epoch)
+            print(f"✅ Logged to W&B - Epoch {epoch}\n")
 
             # ----------------------------
             # Save model to W&B ONLY (every epoch)

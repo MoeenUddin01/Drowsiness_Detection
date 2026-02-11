@@ -64,17 +64,6 @@ class Evaluator:
             avg_loss = sum(batch_losses) / len(batch_losses) if batch_losses else 0.0
             accuracy = 100.0 * correct / total if total > 0 else 0.0
 
-            # Log validation metrics to W&B (per-epoch)
-            try:
-                if wandb.run is not None:
-                    wandb.log({
-                        "val/loss": avg_loss,
-                        "val/accuracy": accuracy,
-                        "epoch": epoch
-                    }, step=epoch)
-            except Exception:
-                pass
-
             print(f"[Epoch {epoch}] Average Validation Loss: {avg_loss:.4f}")
             print(f"[Epoch {epoch}] Validation Accuracy: {accuracy:.2f}%")
 
