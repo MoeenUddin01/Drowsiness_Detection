@@ -32,8 +32,14 @@ def get_dataloaders(batch_size=16, num_workers=1, shuffle=True):
         
     Returns:
         train_loader, test_loader: PyTorch DataLoader objects
+        train_dataset.classes: List of class names
     """
     train_dataset, test_dataset = get_datasets()
+    
+    # Auto-detect number of classes
+    num_classes = len(train_dataset.classes)
+    print(f"Auto-detected {num_classes} classes: {train_dataset.classes}")
+    print(f"Train samples: {len(train_dataset)}, Test samples: {len(test_dataset)}")
     
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
@@ -42,7 +48,7 @@ def get_dataloaders(batch_size=16, num_workers=1, shuffle=True):
         test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers
     )
     
-    return train_loader, test_loader
+    return train_loader, test_loader, train_dataset.classes
 
 
 if __name__ == "__main__":

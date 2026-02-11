@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.126.0",
+    "uvicorn>=0.27.0",
     "ipykernel>=7.1.0",
     "matplotlib>=3.10.8",
     "python-dotenv>=1.2.1",
@@ -14,5 +15,6 @@ dependencies = [
     "torchvision>=0.24.1",
     "wandb>=0.23.1",
     "seaborn",
-    "scikit-learn"
+    "scikit-learn",
+    "opencv-python"
 ]

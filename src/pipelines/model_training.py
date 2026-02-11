@@ -35,17 +35,21 @@ def main():
         # ----------------------------
         # Training configuration
         # ----------------------------
-        EPOCHS = 5
+        EPOCHS = 10
         BATCH_SIZE = 32
         LEARNING_RATE = 0.001
         DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
+        NUM_CLASSES = 2  # Training on 2 classes: Closed and Opened
+        CLASS_NAMES = ["Closed", "Opened"]  # Class 0: Closed (Drowsy), Class 1: Opened (Awake)
 
         config = {
             "Epochs": EPOCHS,
             "Batch Size": BATCH_SIZE,
             "Learning Rate": LEARNING_RATE,
             "Device": DEVICE,
-            "Model": "CNN"
+            "Model": "CNN",
+            "Num Classes": NUM_CLASSES,
+            "Classes": CLASS_NAMES
         }
 
         # ----------------------------
@@ -60,16 +64,23 @@ def main():
         # ----------------------------
         # Load data
         # ----------------------------
-        train_loader, test_loader = get_dataloaders(
+        train_loader, test_loader, class_names = get_dataloaders(
             batch_size=BATCH_SIZE,
             num_workers=2
         )
+        
+        # Auto-detect number of classes from data
+        NUM_CLASSES = len(class_names)
+        print(f"\n✅ Auto-detected {NUM_CLASSES} classes: {class_names}")
+        print(f"   Class 0: {class_names[0]}")
+        print(f"   Class 1: {class_names[1] if len(class_names) > 1 else 'N/A'}\n")
 
         # ----------------------------
         # Initialize model
         # ----------------------------
-        model = CNN(num_classes=13).to(DEVICE)
-        print("Using device:", DEVICE)
+        model = CNN(num_classes=NUM_CLASSES).to(DEVICE)
+        print(f"Using device: {DEVICE}")
+        print(f"Model initialized with {NUM_CLASSES} classes")
         # Watch the model so W&B receives gradients/parameters and keeps live charts updated
         try:
             wandb.watch(model, log="all", log_freq=100)
