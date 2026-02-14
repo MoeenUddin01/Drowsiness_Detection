@@ -1,4 +1,4 @@
-# Training Improvements for Better Model Generalization
+<!-- # Training Improvements for Better Model Generalization
 
 ## 🎯 Problem
 The model was always predicting "Closed" (drowsy) class, indicating:
@@ -139,4 +139,4 @@ trainer = Trainer(..., class_weights=class_weights)
 
 - Class imbalance: https://pytorch.org/docs/stable/generated/torch.nn.CrossEntropyLoss.html
 - Learning rate scheduling: https://pytorch.org/docs/stable/optim.html
-- Data augmentation: https://pytorch.org/vision/stable/transforms.html
+- Data augmentation: https://pytorch.org/vision/stable/transforms.html -->

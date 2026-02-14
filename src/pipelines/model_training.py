@@ -2,16 +2,25 @@
 import sys
 import os
 from datetime import datetime
+from pathlib import Path
 
 # ----------------------------
-# Add project root to sys.path
+# Add project root to sys.path (auto-detect)
 # ----------------------------
-PROJECT_ROOT = "/content/Drowsiness_Detection"
+# Get the project root (parent of src directory)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+PROJECT_ROOT = str(PROJECT_ROOT)
 if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+    sys.path.insert(0, PROJECT_ROOT)
 
 import torch
-import wandb
+try:
+    import wandb
+    WANDB_AVAILABLE = True
+except ImportError:
+    WANDB_AVAILABLE = False
+    print("⚠️  wandb not available. Training will continue without W&B logging.")
+
 from src.data.loader import get_dataloaders
 from src.model.cnn import CNN
 from src.model.train import Trainer
@@ -21,16 +30,27 @@ from src.model.evaluation import Evaluator
 def main():
     try:
         # ----------------------------
-        # Paths (Google Drive already mounted manually)
+        # Paths (local or Colab)
         # ----------------------------
-        BASE_DRIVE_PATH = "/content/drive/MyDrive/DrowsinessProject"
-        os.makedirs(BASE_DRIVE_PATH, exist_ok=True)
-
-        CHECKPOINT_DIR = os.path.join(BASE_DRIVE_PATH, "artifacts", "checkpoints")
+        # Try to detect if we're in Colab
+        try:
+            from google.colab import drive  # type: ignore
+            # Running in Colab
+            BASE_DRIVE_PATH = "/content/drive/MyDrive/DrowsinessProject"
+            os.makedirs(BASE_DRIVE_PATH, exist_ok=True)
+            CHECKPOINT_DIR = os.path.join(BASE_DRIVE_PATH, "artifacts", "checkpoints")
+            FINAL_MODEL_DIR = os.path.join(BASE_DRIVE_PATH, "artifacts", "model")
+        except ImportError:
+            # Running locally - use project root
+            BASE_PATH = os.path.join(PROJECT_ROOT, "artifacts")
+            CHECKPOINT_DIR = os.path.join(BASE_PATH, "checkpoints")
+            FINAL_MODEL_DIR = os.path.join(BASE_PATH, "models")
+        
         os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-
-        FINAL_MODEL_DIR = os.path.join(BASE_DRIVE_PATH, "artifacts", "model")
         os.makedirs(FINAL_MODEL_DIR, exist_ok=True)
+        
+        print(f"📁 Checkpoint directory: {CHECKPOINT_DIR}")
+        print(f"📁 Model directory: {FINAL_MODEL_DIR}")
 
         # ----------------------------
         # Training configuration
@@ -53,13 +73,21 @@ def main():
         }
 
         # ----------------------------
-        # Initialize W&B
+        # Initialize W&B (optional)
         # ----------------------------
-        wandb.init(
-            project="Drowsiness-Detection-CNN",
-            config=config,
-            name=f"Experiment-{datetime.now().strftime('%d_%m_%Y_%H_%M')}"
-        )
+        if WANDB_AVAILABLE:
+            try:
+                wandb.init(
+                    project="Drowsiness-Detection-CNN",
+                    config=config,
+                    name=f"Experiment-{datetime.now().strftime('%d_%m_%Y_%H_%M')}"
+                )
+                print("✅ W&B initialized")
+            except Exception as e:
+                print(f"⚠️  W&B initialization failed: {e}. Continuing without W&B.")
+                WANDB_AVAILABLE = False
+        else:
+            print("ℹ️  Training without W&B logging")
 
         # ----------------------------
         # Load data with class weights calculation
@@ -88,10 +116,11 @@ def main():
         print(f"Using device: {DEVICE}")
         print(f"Model initialized with {NUM_CLASSES} classes")
         # Watch the model so W&B receives gradients/parameters and keeps live charts updated
-        try:
-            wandb.watch(model, log="all", log_freq=100)
-        except Exception as e:
-            print(f"W&B watch failed: {e}")
+        if WANDB_AVAILABLE:
+            try:
+                wandb.watch(model, log="all", log_freq=100)
+            except Exception as e:
+                print(f"W&B watch failed: {e}")
 
         # ----------------------------
         # Initialize Trainer & Evaluator with class weights
@@ -150,15 +179,15 @@ def main():
             for class_idx, acc in val_class_acc.items():
                 metrics[f"Val_Class_{class_idx}_Acc"] = acc
             
-            try:
-                step_val = epoch * NUM_BATCHES if NUM_BATCHES else epoch
-                wandb.log(metrics, step=step_val)
-            except Exception:
+            if WANDB_AVAILABLE:
                 try:
-                    wandb.log(metrics)
-                except Exception:
-                    pass
-            print(f"✅ Logged to W&B - Epoch {epoch}\n")
+                    step_val = epoch * NUM_BATCHES if NUM_BATCHES else epoch
+                    wandb.log(metrics, step=step_val)
+                    print(f"✅ Logged to W&B - Epoch {epoch}\n")
+                except Exception as e:
+                    print(f"⚠️  W&B logging failed: {e}\n")
+            else:
+                print(f"✅ Epoch {epoch} completed\n")
 
             # ----------------------------
             # Save checkpoint every epoch
@@ -183,24 +212,25 @@ def main():
             trainer.save_model(epoch, is_best=is_best, metrics=metrics_dict)
 
             # ----------------------------
-            # Save model to W&B (every epoch)
+            # Save model to W&B (every epoch, optional)
             # ----------------------------
-            try:
-                epoch_model_filename = f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}.pth"
-                torch.save({"model_state_dict": model.state_dict()}, epoch_model_filename)
+            if WANDB_AVAILABLE:
+                try:
+                    epoch_model_filename = f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}.pth"
+                    torch.save({"model_state_dict": model.state_dict()}, epoch_model_filename)
 
-                artifact = wandb.Artifact(
-                    name=f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}",
-                    type="model"
-                )
-                artifact.add_file(epoch_model_filename)
-                wandb.log_artifact(artifact)
-                print(f"Epoch {epoch} model logged to W&B as artifact")
+                    artifact = wandb.Artifact(
+                        name=f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}",
+                        type="model"
+                    )
+                    artifact.add_file(epoch_model_filename)
+                    wandb.log_artifact(artifact)
+                    print(f"Epoch {epoch} model logged to W&B as artifact")
 
-                # Remove the temporary local file to avoid clutter
-                os.remove(epoch_model_filename)
-            except Exception as e:
-                print(f"Warning: Could not save to W&B: {e}")
+                    # Remove the temporary local file to avoid clutter
+                    os.remove(epoch_model_filename)
+                except Exception as e:
+                    print(f"Warning: Could not save to W&B: {e}")
 
             # ----------------------------
             # Save best model to Drive
@@ -226,15 +256,29 @@ def main():
                 break
 
         # ----------------------------
-        # Save final model (optional) to W&B
+        # Save final model
         # ----------------------------
         final_model_path = os.path.join(FINAL_MODEL_DIR, "drowsiness_cnn_final.pth")
-        torch.save({"model_state_dict": model.state_dict()}, final_model_path)
-        print(f"Final model saved at: {final_model_path}")
+        torch.save({
+            "model_state_dict": model.state_dict(),
+            "epoch": EPOCHS,
+            "best_val_acc": best_accuracy,
+            "config": config
+        }, final_model_path)
+        print(f"✅ Final model saved at: {final_model_path}")
 
-        final_artifact = wandb.Artifact("drowsiness_cnn_final", type="model")
-        final_artifact.add_file(final_model_path)
-        wandb.log_artifact(final_artifact)
+        if WANDB_AVAILABLE:
+            try:
+                final_artifact = wandb.Artifact("drowsiness_cnn_final", type="model")
+                final_artifact.add_file(final_model_path)
+                wandb.log_artifact(final_artifact)
+                print("✅ Final model logged to W&B")
+            except Exception as e:
+                print(f"⚠️  Could not log final model to W&B: {e}")
+        
+        print(f"\n🎉 Training completed!")
+        print(f"📊 Best validation accuracy: {best_accuracy:.2f}%")
+        print(f"💾 Best model saved at: {os.path.join(FINAL_MODEL_DIR, 'drowsiness_cnn_best.pth')}")
 
     except Exception as e:
         print(f"Error in Training Script: {e}")
@@ -242,5 +286,12 @@ def main():
 
 
 if __name__ == "__main__":
-    wandb.login(key=os.environ.get("WANDB_API_KEY", None))
+    if WANDB_AVAILABLE:
+        # Try to login if API key is available
+        api_key = os.environ.get("WANDB_API_KEY", None)
+        if api_key:
+            try:
+                wandb.login(key=api_key)
+            except Exception as e:
+                print(f"⚠️  W&B login failed: {e}. Continuing without W&B.")
     main()

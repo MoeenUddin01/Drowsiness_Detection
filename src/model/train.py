@@ -57,12 +57,13 @@ class Trainer:
         # Learning rate scheduler
         # ----------------------------
         if use_scheduler:
+            # Create scheduler without verbose (not supported in all PyTorch versions)
+            # We'll print LR changes manually in update_scheduler method
             self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
                 self.optimizer, 
                 mode='min', 
                 factor=0.5, 
-                patience=3, 
-                verbose=True
+                patience=3
             )
         else:
             self.scheduler = None
@@ -193,7 +194,11 @@ class Trainer:
     def update_scheduler(self, val_loss: float):
         """Update learning rate scheduler based on validation loss"""
         if self.scheduler is not None:
+            old_lr = self.optimizer.param_groups[0]['lr']
             self.scheduler.step(val_loss)
+            new_lr = self.optimizer.param_groups[0]['lr']
+            if old_lr != new_lr:
+                print(f"📉 Learning rate reduced: {old_lr:.6f} -> {new_lr:.6f}")
 
     # ----------------------------
     # LOAD CHECKPOINT
