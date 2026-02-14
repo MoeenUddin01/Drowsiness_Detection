@@ -62,11 +62,12 @@ def main():
         )
 
         # ----------------------------
-        # Load data
+        # Load data with class weights calculation
         # ----------------------------
-        train_loader, test_loader, class_names = get_dataloaders(
+        train_loader, test_loader, class_names, class_weights = get_dataloaders(
             batch_size=BATCH_SIZE,
-            num_workers=2
+            num_workers=2,
+            calculate_weights=True  # Calculate class weights for imbalanced datasets
         )
         # Determine number of batches to compute consistent global step values
         try:
@@ -93,7 +94,7 @@ def main():
             print(f"W&B watch failed: {e}")
 
         # ----------------------------
-        # Initialize Trainer & Evaluator
+        # Initialize Trainer & Evaluator with class weights
         # ----------------------------
         trainer = Trainer(
             model=model,
@@ -101,42 +102,58 @@ def main():
             device=DEVICE,
             learning_rate=LEARNING_RATE,
             model_name="drowsiness_cnn",
-            checkpoint_dir=CHECKPOINT_DIR
+            checkpoint_dir=CHECKPOINT_DIR,
+            class_weights=class_weights,  # Use class weights to handle imbalance
+            use_scheduler=True  # Enable learning rate scheduling
         )
 
         evaluator = Evaluator(model=model, data_loader=test_loader, device=DEVICE)
 
         best_accuracy = 0.0
+        best_val_loss = float('inf')
+        patience = 5  # Early stopping patience
+        patience_counter = 0
 
         # ----------------------------
-        # Epoch loop
+        # Epoch loop with early stopping
         # ----------------------------
         for epoch in range(1, EPOCHS + 1):
             # Training
-            train_loss, train_acc = trainer.train_one_epoch(epoch=epoch)
+            train_loss, train_acc, train_class_acc = trainer.train_one_epoch(epoch=epoch)
 
             # Validation
-            val_loss, val_acc = evaluator.evaluate(epoch=epoch)
+            val_loss, val_acc, val_class_acc = evaluator.evaluate(epoch=epoch)
 
+            # Update learning rate scheduler
+            trainer.update_scheduler(val_loss)
+
+            print(f"\n{'='*60}")
             print(f"[Epoch {epoch}] Training Loss: {train_loss:.4f}, Training Acc: {train_acc:.2f}%")
             print(f"[Epoch {epoch}] Validation Loss: {val_loss:.4f}, Validation Acc: {val_acc:.2f}%")
+            print(f"{'='*60}\n")
 
             # ----------------------------
-            # Log ALL 4 metrics to W&B with clean names
+            # Log metrics to W&B
             # ----------------------------
             metrics = {
                 "Training Loss": train_loss,
                 "Training Accuracy": train_acc,
                 "Validation Loss": val_loss,
                 "Validation Accuracy": val_acc,
+                "Learning Rate": trainer.optimizer.param_groups[0]['lr'],
                 "epoch": epoch
             }
-            # Use a global step consistent with per-batch logging so charts update live
+            
+            # Add per-class accuracies
+            for class_idx, acc in train_class_acc.items():
+                metrics[f"Train_Class_{class_idx}_Acc"] = acc
+            for class_idx, acc in val_class_acc.items():
+                metrics[f"Val_Class_{class_idx}_Acc"] = acc
+            
             try:
                 step_val = epoch * NUM_BATCHES if NUM_BATCHES else epoch
                 wandb.log(metrics, step=step_val)
             except Exception:
-                # fallback to default logging if wandb not available or step fails
                 try:
                     wandb.log(metrics)
                 except Exception:
@@ -144,30 +161,69 @@ def main():
             print(f"✅ Logged to W&B - Epoch {epoch}\n")
 
             # ----------------------------
-            # Save model to W&B ONLY (every epoch)
+            # Save checkpoint every epoch
             # ----------------------------
-            epoch_model_filename = f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}.pth"
-            torch.save({"model_state_dict": model.state_dict()}, epoch_model_filename)
-
-            artifact = wandb.Artifact(
-                name=f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}",
-                type="model"
-            )
-            artifact.add_file(epoch_model_filename)
-            wandb.log_artifact(artifact)
-            print(f"Epoch {epoch} model logged to W&B as artifact")
-
-            # Remove the temporary local file to avoid clutter
-            os.remove(epoch_model_filename)
-
-            # ----------------------------
-            # Save best model to Drive ONLY
-            # ----------------------------
-            if val_acc > best_accuracy:
+            is_best = val_acc > best_accuracy
+            if is_best:
                 best_accuracy = val_acc
+                patience_counter = 0  # Reset patience counter
+            else:
+                patience_counter += 1
+            
+            # Save best model
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+            
+            metrics_dict = {
+                "train_acc": train_acc,
+                "val_acc": val_acc,
+                "train_loss": train_loss,
+                "val_loss": val_loss
+            }
+            trainer.save_model(epoch, is_best=is_best, metrics=metrics_dict)
+
+            # ----------------------------
+            # Save model to W&B (every epoch)
+            # ----------------------------
+            try:
+                epoch_model_filename = f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}.pth"
+                torch.save({"model_state_dict": model.state_dict()}, epoch_model_filename)
+
+                artifact = wandb.Artifact(
+                    name=f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}",
+                    type="model"
+                )
+                artifact.add_file(epoch_model_filename)
+                wandb.log_artifact(artifact)
+                print(f"Epoch {epoch} model logged to W&B as artifact")
+
+                # Remove the temporary local file to avoid clutter
+                os.remove(epoch_model_filename)
+            except Exception as e:
+                print(f"Warning: Could not save to W&B: {e}")
+
+            # ----------------------------
+            # Save best model to Drive
+            # ----------------------------
+            if is_best:
                 best_model_path = os.path.join(FINAL_MODEL_DIR, "drowsiness_cnn_best.pth")
-                torch.save({"model_state_dict": model.state_dict()}, best_model_path)
-                print(f"Best model updated at Epoch {epoch} with Validation Accuracy {val_acc:.2f}%")
+                torch.save({
+                    "model_state_dict": model.state_dict(),
+                    "epoch": epoch,
+                    "val_acc": val_acc,
+                    "val_loss": val_loss,
+                    "train_acc": train_acc,
+                    "train_loss": train_loss
+                }, best_model_path)
+                print(f"✅ Best model updated at Epoch {epoch} with Validation Accuracy {val_acc:.2f}%")
+            
+            # ----------------------------
+            # Early stopping
+            # ----------------------------
+            if patience_counter >= patience:
+                print(f"\n⚠️  Early stopping triggered! No improvement for {patience} epochs.")
+                print(f"   Best validation accuracy: {best_accuracy:.2f}%")
+                break
 
         # ----------------------------
         # Save final model (optional) to W&B

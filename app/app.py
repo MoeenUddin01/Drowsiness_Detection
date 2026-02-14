@@ -1,5 +1,3 @@
-# app/app.py
-
 import io
 import cv2
 import torch
@@ -30,14 +28,12 @@ CLASS_NAMES = ["Closed", "Opened"]
 CLASS_DISPLAY_2 = ["😴 Drowsy", "😊 Awake"]
 
 # -----------------------------
-# IMAGE TRANSFORMS (matching training transforms)
+# IMAGE TRANSFORMS (matching training transforms - using test transform)
 # -----------------------------
-transform = transforms.Compose([
-    transforms.Resize((IMAGE_SIZE, IMAGE_SIZE)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-])
+# Import the exact same transform used during testing
+from src.data.transforms import get_test_transform
+
+transform = get_test_transform(image_size=(IMAGE_SIZE, IMAGE_SIZE))
 
 # Simple transform for webcam (without normalization for now)
 transform_simple = transforms.Compose([
@@ -58,19 +54,38 @@ def predict_drowsiness(probabilities):
     confidence = probs.max().item()
     class_idx = probs.argmax().item()
     
+    # Debug: Print probabilities to help diagnose issues
+    print(f"DEBUG - Probabilities: Closed={probs[0].item():.4f}, Opened={probs[1].item():.4f}")
+    print(f"DEBUG - Predicted class: {class_idx} ({'Closed' if class_idx == 0 else 'Opened'}), Confidence: {confidence:.4f}")
+    
     return class_idx, confidence
 
 # -----------------------------
 # LOAD MODEL
 # -----------------------------
 model = CNN(num_classes=MODEL_NUM_CLASSES).to(DEVICE)
-checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
-if "model_state_dict" in checkpoint:
-    model.load_state_dict(checkpoint["model_state_dict"])
-else:
-    model.load_state_dict(checkpoint)
-model.eval()
-print("✅ Model loaded and ready!")
+try:
+    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
+    if "model_state_dict" in checkpoint:
+        model.load_state_dict(checkpoint["model_state_dict"])
+        print(f"✅ Model loaded from checkpoint (epoch: {checkpoint.get('epoch', 'unknown')})")
+    else:
+        model.load_state_dict(checkpoint)
+        print("✅ Model loaded from checkpoint")
+    
+    model.eval()
+    
+    # Verify model with a dummy input
+    with torch.no_grad():
+        dummy_input = torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE).to(DEVICE)
+        dummy_output = model(dummy_input)
+        dummy_probs = torch.nn.functional.softmax(dummy_output, dim=1)
+        print(f"✅ Model verification - Output shape: {dummy_output.shape}, Probabilities: {dummy_probs.cpu().numpy()}")
+    
+    print("✅ Model loaded and ready!")
+except Exception as e:
+    print(f"❌ Error loading model: {e}")
+    raise
 
 # -----------------------------
 # FASTAPI APP
@@ -274,22 +289,47 @@ async def predict_image(file: UploadFile = File(...)):
     try:
         image_bytes = await file.read()
         image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        
+        # Ensure image is properly formatted
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Apply transforms
         input_tensor = transform(image).unsqueeze(0).to(DEVICE)
+        
+        # Debug: Check tensor shape and stats
+        print(f"DEBUG - Input tensor shape: {input_tensor.shape}")
+        print(f"DEBUG - Input tensor range: [{input_tensor.min().item():.4f}, {input_tensor.max().item():.4f}]")
+        print(f"DEBUG - Input tensor mean: {input_tensor.mean().item():.4f}")
 
         with torch.no_grad():
             outputs = model(input_tensor)
+            # Debug: Check raw outputs before softmax
+            print(f"DEBUG - Raw model outputs: {outputs.cpu().numpy()}")
             probabilities = torch.nn.functional.softmax(outputs, dim=1)
         
         # Predict using 2-class model
         class_idx, confidence = predict_drowsiness(probabilities)
+        
+        # Get both probabilities for better debugging
+        probs = probabilities[0].cpu()
+        closed_prob = probs[0].item()
+        opened_prob = probs[1].item()
 
         return JSONResponse({
             "prediction": CLASS_NAMES[class_idx],
             "class_index": class_idx,
             "confidence": round(float(confidence), 4),
-            "display_status": CLASS_DISPLAY_2[class_idx]
+            "display_status": CLASS_DISPLAY_2[class_idx],
+            "probabilities": {
+                "closed": round(float(closed_prob), 4),
+                "opened": round(float(opened_prob), 4)
+            }
         })
     except Exception as e:
+        import traceback
+        error_msg = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"ERROR in predict_image: {error_msg}")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 # -----------------------------
@@ -307,7 +347,7 @@ def webcam_stream():
 
         # Convert to RGB and PIL
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        pil_image = Image.fromarray(rgb_frame)
+        pil_image = Image.fromarray(rgb_frame).convert("RGB")
         input_tensor = transform(pil_image).unsqueeze(0).to(DEVICE)
 
         # Predict

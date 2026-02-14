@@ -35,11 +35,17 @@ class Evaluator:
         Returns:
             avg_loss: Average validation loss for the epoch (float)
             accuracy: Accuracy (%) for the dataset (float)
+            class_accuracies: Dictionary of per-class accuracies
         """
         self.model.eval()
         correct = 0
         total = 0
         batch_losses = []
+        
+        # Per-class tracking
+        from collections import Counter
+        class_correct = Counter()
+        class_total = Counter()
 
         try:
             with torch.no_grad():
@@ -56,22 +62,36 @@ class Evaluator:
                     _, predicted = torch.max(outputs, 1)
                     total += labels.size(0)
                     correct += (predicted == labels).sum().item()
+                    
+                    # Track per-class accuracy
+                    for label, pred in zip(labels.cpu().numpy(), predicted.cpu().numpy()):
+                        class_total[label] += 1
+                        if label == pred:
+                            class_correct[label] += 1
 
                     if batch_idx % log_every == 0:
-                        print(f"[Epoch {epoch}] Batch {batch_idx}: Loss = {loss.item():.4f}")
+                        print(f"[Epoch {epoch}] Val Batch {batch_idx}: Loss = {loss.item():.4f}")
 
             # Compute average loss and accuracy
             avg_loss = sum(batch_losses) / len(batch_losses) if batch_losses else 0.0
             accuracy = 100.0 * correct / total if total > 0 else 0.0
+            
+            # Calculate per-class accuracies
+            class_accuracies = {}
+            for class_idx in class_total.keys():
+                class_acc = 100.0 * class_correct[class_idx] / class_total[class_idx] if class_total[class_idx] > 0 else 0.0
+                class_accuracies[class_idx] = class_acc
 
             print(f"[Epoch {epoch}] Average Validation Loss: {avg_loss:.4f}")
-            print(f"[Epoch {epoch}] Validation Accuracy: {accuracy:.2f}%")
+            print(f"[Epoch {epoch}] Overall Validation Accuracy: {accuracy:.2f}%")
+            for class_idx, acc in sorted(class_accuracies.items()):
+                print(f"  Class {class_idx} Val Accuracy: {acc:.2f}% ({class_correct[class_idx]}/{class_total[class_idx]})")
 
-            return avg_loss, accuracy  # only return floats now
+            return avg_loss, accuracy, class_accuracies
 
         except Exception as e:
-            print(f"Error during evaluation at Epoch {epoch}, Batch {batch_idx}: {e}")
-            return 0.0, 0.0
+            print(f"Error during evaluation at Epoch {epoch}: {e}")
+            return 0.0, 0.0, {}
 
 
 # ----------------------------
@@ -82,9 +102,11 @@ if __name__ == "__main__":
     from src.model.cnn import CNN
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    _, test_loader = get_dataloaders(batch_size=16, num_workers=1)
-    model = CNN(num_classes=13).to(device)
+    _, test_loader, class_names, _ = get_dataloaders(batch_size=16, num_workers=1, calculate_weights=False)
+    num_classes = len(class_names)
+    model = CNN(num_classes=num_classes).to(device)
 
     evaluator = Evaluator(model=model, data_loader=test_loader, device=device)
-    val_loss, val_acc = evaluator.evaluate(epoch=1)
+    val_loss, val_acc, class_acc = evaluator.evaluate(epoch=1)
     print(f"Validation Loss: {val_loss}, Validation Accuracy: {val_acc}")
+    print(f"Per-class accuracies: {class_acc}")
