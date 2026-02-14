@@ -16,15 +16,58 @@ from src.model.cnn import CNN  # import your trained CNN
 # -----------------------------
 # CONFIG
 # -----------------------------
-DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-MODEL_PATH = "/home/moeenuddin/Desktop/Deep_learning/drowsiness_detection/Drowsiness_Detection/artifacts/models/drowsiness_epoch10_train97.66_val94.00.pth"
-IMAGE_SIZE = 128
-MODEL_NUM_CLASSES = 2  # Model trained with 2 classes: Closed (Drowsy) and Opened (Awake)
+# Check if CUDA is available and compatible
+def get_device():
+    """Get the best available device, checking CUDA compatibility"""
+    if torch.cuda.is_available():
+        try:
+            # Try a simple CUDA operation to check compatibility
+            test_tensor = torch.tensor([1.0]).cuda()
+            _ = test_tensor * 2
+            del test_tensor
+            torch.cuda.empty_cache()
+            print("🖥️  Using device: CUDA (GPU)")
+            return "cuda"
+        except Exception as e:
+            print(f"⚠️  CUDA available but not compatible: {str(e)[:100]}")
+            print("   Falling back to CPU")
+            return "cpu"
+    print("🖥️  Using device: CPU")
+    return "cpu"
 
-# Class names mapping
-# Class 0: "Closed" (eyes closed = Drowsy)
-# Class 1: "Opened" (eyes open = Awake)
-CLASS_NAMES = ["Closed", "Opened"]
+DEVICE = get_device()
+# Model path - auto-detect local or Colab path
+import os
+
+# Get the project root directory
+PROJECT_ROOT = Path(__file__).parent.parent
+LOCAL_MODEL_PATH = PROJECT_ROOT / "artifacts" / "models" / "drowsiness_epoch10_train88.16_val87.25.pth"
+COLAB_MODEL_PATH = "/content/Drowsiness_Detection/artifacts/models/drowsiness_cnn_best.pth"
+
+# Use local path if it exists, otherwise try Colab path
+if LOCAL_MODEL_PATH.exists():
+    MODEL_PATH = str(LOCAL_MODEL_PATH)
+elif os.path.exists(COLAB_MODEL_PATH):
+    MODEL_PATH = COLAB_MODEL_PATH
+else:
+    # Fallback: try to find any .pth file in models directory
+    models_dir = PROJECT_ROOT / "artifacts" / "models"
+    if models_dir.exists():
+        pth_files = list(models_dir.glob("*.pth"))
+        if pth_files:
+            MODEL_PATH = str(pth_files[0])  # Use the first .pth file found
+            print(f"⚠️  Using model: {MODEL_PATH}")
+        else:
+            raise FileNotFoundError(f"No model files found in {models_dir}")
+    else:
+        raise FileNotFoundError(f"Models directory not found: {models_dir}")
+IMAGE_SIZE = 128
+MODEL_NUM_CLASSES = 2  # Model trained with 2 classes: closed_1 (Drowsy) and opened_1 (Awake)
+
+# Class names mapping (based on your training data)
+# Class 0: "closed_1" (eyes closed = Drowsy)
+# Class 1: "opened_1" (eyes open = Awake)
+CLASS_NAMES = ["closed_1", "opened_1"]
 CLASS_DISPLAY_2 = ["😴 Drowsy", "😊 Awake"]
 
 # -----------------------------
@@ -63,9 +106,11 @@ def predict_drowsiness(probabilities):
 # -----------------------------
 # LOAD MODEL
 # -----------------------------
-model = CNN(num_classes=MODEL_NUM_CLASSES).to(DEVICE)
+# Always load model to CPU first, then move to device (handles incompatible GPUs)
+model = CNN(num_classes=MODEL_NUM_CLASSES)
 try:
-    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
+    # Load checkpoint to CPU first to avoid CUDA issues
+    checkpoint = torch.load(MODEL_PATH, map_location="cpu")
     if "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])
         print(f"✅ Model loaded from checkpoint (epoch: {checkpoint.get('epoch', 'unknown')})")
@@ -73,14 +118,33 @@ try:
         model.load_state_dict(checkpoint)
         print("✅ Model loaded from checkpoint")
     
+    # Move model to the selected device after loading
+    model = model.to(DEVICE)
     model.eval()
     
-    # Verify model with a dummy input
-    with torch.no_grad():
-        dummy_input = torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE).to(DEVICE)
-        dummy_output = model(dummy_input)
-        dummy_probs = torch.nn.functional.softmax(dummy_output, dim=1)
-        print(f"✅ Model verification - Output shape: {dummy_output.shape}, Probabilities: {dummy_probs.cpu().numpy()}")
+    # Verify model with a dummy input (skip if CUDA incompatible)
+    try:
+        with torch.no_grad():
+            dummy_input = torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE).to(DEVICE)
+            dummy_output = model(dummy_input)
+            dummy_probs = torch.nn.functional.softmax(dummy_output, dim=1)
+            print(f"✅ Model verification - Output shape: {dummy_output.shape}, Probabilities: {dummy_probs.cpu().numpy()}")
+    except Exception as e:
+        if "CUDA" in str(e) or "cuda" in str(e).lower() or "kernel" in str(e).lower():
+            print(f"⚠️  CUDA error during verification. Switching to CPU...")
+            DEVICE = "cpu"
+            model = model.cpu()  # Move model to CPU
+            # Retry verification on CPU
+            try:
+                with torch.no_grad():
+                    dummy_input = torch.randn(1, 3, IMAGE_SIZE, IMAGE_SIZE)
+                    dummy_output = model(dummy_input)
+                    dummy_probs = torch.nn.functional.softmax(dummy_output, dim=1)
+                    print(f"✅ Model verification on CPU - Output shape: {dummy_output.shape}")
+            except Exception as e2:
+                print(f"⚠️  Model verification skipped: {e2}")
+        else:
+            print(f"⚠️  Model verification skipped: {e}")
     
     print("✅ Model loaded and ready!")
 except Exception as e:
@@ -239,9 +303,11 @@ HTML_UI = """
         function displayResult(data) {
             const predClass = data.prediction.toLowerCase();
             const resultDiv = document.getElementById('uploadResult');
-            const emoji = predClass === 'opened' ? '😊' : '😴';
-            const status = predClass === 'opened' ? 'Awake' : 'Drowsy';
-            const styleClass = predClass === 'opened' ? 'awake' : 'drowsy';
+            // Handle both 'opened' and 'opened_1' class names
+            const isOpened = predClass === 'opened' || predClass === 'opened_1';
+            const emoji = isOpened ? '😊' : '😴';
+            const status = isOpened ? 'Awake' : 'Drowsy';
+            const styleClass = isOpened ? 'awake' : 'drowsy';
             
             resultDiv.innerHTML = `
                 <div class="prediction ${styleClass}">
