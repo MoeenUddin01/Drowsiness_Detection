@@ -9,8 +9,7 @@ from collections import Counter
 class Trainer:
     """
     Trainer class for training a PyTorch model.
-    Handles training loop, loss calculation, optimizer, accuracy,
-    checkpoint saving, and resume training.
+    Handles training loop, loss calculation, optimizer, accuracy.
     Now includes class weights, learning rate scheduling, and per-class metrics.
     """
 
@@ -20,17 +19,12 @@ class Trainer:
         data_loader: DataLoader,
         device: str = "cuda",
         learning_rate: float = 1e-3,
-        model_name: str = "model",
-        checkpoint_dir: str = None,
-        resume: bool = True,
         class_weights: torch.Tensor = None,
         use_scheduler: bool = True
     ):
         self.model = model.to(device)
         self.data_loader = data_loader
         self.device = device
-        self.model_name = model_name
-        self.start_epoch = 0
         self.use_scheduler = use_scheduler
 
         # ----------------------------
@@ -67,22 +61,6 @@ class Trainer:
             )
         else:
             self.scheduler = None
-
-        # ----------------------------
-        # Checkpoint directory
-        # ----------------------------
-        if checkpoint_dir is None:
-            self.model_directory = "models"
-        else:
-            self.model_directory = checkpoint_dir
-
-        os.makedirs(self.model_directory, exist_ok=True)
-
-        # ----------------------------
-        # Resume from checkpoint if exists
-        # ----------------------------
-        if resume:
-            self.load_checkpoint()
 
     def train_one_epoch(self, epoch: int, log_every: int = 5):
         self.model.train()
@@ -159,38 +137,6 @@ class Trainer:
 
         return avg_loss, accuracy, class_accuracies
 
-    # ----------------------------
-    # SAVE CHECKPOINT
-    # ----------------------------
-    def save_model(self, epoch: int, is_best: bool = False, metrics: dict = None):
-        try:
-            # Regular checkpoint
-            path = os.path.join(self.model_directory, f"{self.model_name}.pth")
-            checkpoint = {
-                "epoch": epoch,
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-            }
-            if self.scheduler is not None:
-                checkpoint["scheduler_state_dict"] = self.scheduler.state_dict()
-            if metrics:
-                checkpoint["metrics"] = metrics
-                
-            torch.save(checkpoint, path)
-            print(f"Checkpoint saved at: {path}")
-            
-            # Save best model separately
-            if is_best:
-                best_path = os.path.join(self.model_directory, f"{self.model_name}_best.pth")
-                torch.save(checkpoint, best_path)
-                print(f"✅ Best model saved at: {best_path}")
-                return best_path
-            
-            return path
-        except Exception as e:
-            print(f"Error saving checkpoint: {e}")
-            return None
-    
     def update_scheduler(self, val_loss: float):
         """Update learning rate scheduler based on validation loss"""
         if self.scheduler is not None:
@@ -200,27 +146,6 @@ class Trainer:
             if old_lr != new_lr:
                 print(f"📉 Learning rate reduced: {old_lr:.6f} -> {new_lr:.6f}")
 
-    # ----------------------------
-    # LOAD CHECKPOINT
-    # ----------------------------
-    def load_checkpoint(self):
-        path = os.path.join(self.model_directory, f"{self.model_name}.pth")
-
-        if not os.path.exists(path):
-            print("No checkpoint found. Training from scratch.")
-            return
-
-        checkpoint = torch.load(path, map_location=self.device)
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        self.start_epoch = checkpoint["epoch"] + 1
-        
-        if self.scheduler is not None and "scheduler_state_dict" in checkpoint:
-            self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-            print(f"  Scheduler state restored")
-
-        print(f"Resumed training from epoch {self.start_epoch}")
-
 
 # ----------------------------
 # Quick local / Colab test
@@ -229,15 +154,6 @@ if __name__ == "__main__":
     from src.data.loader import get_dataloaders
     from src.model.cnn import CNN
     from src.model.evaluation import Evaluator
-
-    try:
-        from google.colab import drive  # type: ignore
-        drive.mount("/content/drive")
-        CHECKPOINT_DIR = "/content/drive/MyDrive/DrowsinessProject/artifacts/checkpoints"
-        os.makedirs(CHECKPOINT_DIR, exist_ok=True)
-    except ImportError:
-        CHECKPOINT_DIR = "artifacts/checkpoints"
-        os.makedirs(CHECKPOINT_DIR, exist_ok=True)
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
     train_loader, test_loader, class_names, class_weights = get_dataloaders(
@@ -253,8 +169,6 @@ if __name__ == "__main__":
         model=model,
         data_loader=train_loader,
         device=device,
-        model_name="drowsiness_cnn",
-        checkpoint_dir=CHECKPOINT_DIR,
         class_weights=class_weights,
         use_scheduler=True
     )
@@ -264,13 +178,11 @@ if __name__ == "__main__":
     EPOCHS = 10
     best_val_acc = 0.0
     
-    for epoch in range(trainer.start_epoch, EPOCHS):
+    for epoch in range(1, EPOCHS + 1):
         train_loss, train_acc, _ = trainer.train_one_epoch(epoch)
         val_loss, val_acc, _ = evaluator.evaluate(epoch)
         trainer.update_scheduler(val_loss)
         
-        is_best = val_acc > best_val_acc
-        if is_best:
+        if val_acc > best_val_acc:
             best_val_acc = val_acc
-        
-        trainer.save_model(epoch, is_best=is_best)
+            print(f"✅ New best validation accuracy: {best_val_acc:.2f}%")

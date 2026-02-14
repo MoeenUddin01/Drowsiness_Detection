@@ -14,11 +14,11 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 import torch
+WANDB_AVAILABLE = False
 try:
     import wandb
     WANDB_AVAILABLE = True
 except ImportError:
-    WANDB_AVAILABLE = False
     print("⚠️  wandb not available. Training will continue without W&B logging.")
 
 from src.data.loader import get_dataloaders
@@ -38,18 +38,14 @@ def main():
             # Running in Colab
             BASE_DRIVE_PATH = "/content/drive/MyDrive/DrowsinessProject"
             os.makedirs(BASE_DRIVE_PATH, exist_ok=True)
-            CHECKPOINT_DIR = os.path.join(BASE_DRIVE_PATH, "artifacts", "checkpoints")
             FINAL_MODEL_DIR = os.path.join(BASE_DRIVE_PATH, "artifacts", "model")
         except ImportError:
             # Running locally - use project root
             BASE_PATH = os.path.join(PROJECT_ROOT, "artifacts")
-            CHECKPOINT_DIR = os.path.join(BASE_PATH, "checkpoints")
             FINAL_MODEL_DIR = os.path.join(BASE_PATH, "models")
         
-        os.makedirs(CHECKPOINT_DIR, exist_ok=True)
         os.makedirs(FINAL_MODEL_DIR, exist_ok=True)
         
-        print(f"📁 Checkpoint directory: {CHECKPOINT_DIR}")
         print(f"📁 Model directory: {FINAL_MODEL_DIR}")
 
         # ----------------------------
@@ -75,6 +71,7 @@ def main():
         # ----------------------------
         # Initialize W&B (optional)
         # ----------------------------
+        use_wandb = False  # Initialize local variable
         if WANDB_AVAILABLE:
             try:
                 wandb.init(
@@ -83,9 +80,10 @@ def main():
                     name=f"Experiment-{datetime.now().strftime('%d_%m_%Y_%H_%M')}"
                 )
                 print("✅ W&B initialized")
+                use_wandb = True
             except Exception as e:
                 print(f"⚠️  W&B initialization failed: {e}. Continuing without W&B.")
-                WANDB_AVAILABLE = False
+                use_wandb = False
         else:
             print("ℹ️  Training without W&B logging")
 
@@ -116,7 +114,7 @@ def main():
         print(f"Using device: {DEVICE}")
         print(f"Model initialized with {NUM_CLASSES} classes")
         # Watch the model so W&B receives gradients/parameters and keeps live charts updated
-        if WANDB_AVAILABLE:
+        if use_wandb:
             try:
                 wandb.watch(model, log="all", log_freq=100)
             except Exception as e:
@@ -130,8 +128,6 @@ def main():
             data_loader=train_loader,
             device=DEVICE,
             learning_rate=LEARNING_RATE,
-            model_name="drowsiness_cnn",
-            checkpoint_dir=CHECKPOINT_DIR,
             class_weights=class_weights,  # Use class weights to handle imbalance
             use_scheduler=True  # Enable learning rate scheduling
         )
@@ -179,7 +175,7 @@ def main():
             for class_idx, acc in val_class_acc.items():
                 metrics[f"Val_Class_{class_idx}_Acc"] = acc
             
-            if WANDB_AVAILABLE:
+            if use_wandb:
                 try:
                     step_val = epoch * NUM_BATCHES if NUM_BATCHES else epoch
                     wandb.log(metrics, step=step_val)
@@ -190,7 +186,7 @@ def main():
                 print(f"✅ Epoch {epoch} completed\n")
 
             # ----------------------------
-            # Save checkpoint every epoch
+            # Track best model
             # ----------------------------
             is_best = val_acc > best_accuracy
             if is_best:
@@ -199,22 +195,13 @@ def main():
             else:
                 patience_counter += 1
             
-            # Save best model
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
-            
-            metrics_dict = {
-                "train_acc": train_acc,
-                "val_acc": val_acc,
-                "train_loss": train_loss,
-                "val_loss": val_loss
-            }
-            trainer.save_model(epoch, is_best=is_best, metrics=metrics_dict)
 
             # ----------------------------
             # Save model to W&B (every epoch, optional)
             # ----------------------------
-            if WANDB_AVAILABLE:
+            if use_wandb:
                 try:
                     epoch_model_filename = f"drowsiness_epoch{epoch}_train{train_acc:.2f}_val{val_acc:.2f}.pth"
                     torch.save({"model_state_dict": model.state_dict()}, epoch_model_filename)
@@ -267,7 +254,7 @@ def main():
         }, final_model_path)
         print(f"✅ Final model saved at: {final_model_path}")
 
-        if WANDB_AVAILABLE:
+        if use_wandb:
             try:
                 final_artifact = wandb.Artifact("drowsiness_cnn_final", type="model")
                 final_artifact.add_file(final_model_path)
@@ -286,12 +273,11 @@ def main():
 
 
 if __name__ == "__main__":
-    if WANDB_AVAILABLE:
-        # Try to login if API key is available
-        api_key = os.environ.get("WANDB_API_KEY", None)
-        if api_key:
-            try:
-                wandb.login(key=api_key)
-            except Exception as e:
-                print(f"⚠️  W&B login failed: {e}. Continuing without W&B.")
+    # Try to login if API key is available (optional)
+    api_key = os.environ.get("WANDB_API_KEY", None)
+    if api_key and WANDB_AVAILABLE:
+        try:
+            wandb.login(key=api_key)
+        except Exception as e:
+            print(f"⚠️  W&B login failed: {e}. Continuing without W&B.")
     main()
