@@ -165,164 +165,196 @@ HTML_UI = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GuardAI | Drowsiness Monitor</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; }
-        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .sidebar-link { transition: all 0.2s; border-left: 3px solid transparent; }
-        .sidebar-link.active { background: rgba(59, 130, 246, 0.1); border-left-color: #3b82f6; color: #60a5fa; }
-        .drag-over { border-color: #3b82f6 !important; background: rgba(59, 130, 246, 0.1) !important; }
-        .loader { border-top-color: #3b82f6; animation: spinner 1.5s linear infinite; }
-        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GuardAI | Drowsiness Detection</title>
+<style>
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    margin: 0; padding: 0;
+    display: flex; justify-content: center; align-items: center;
+    min-height: 100vh;
+}
+.container {
+    background: #fff;
+    border-radius: 20px;
+    padding: 40px 30px;
+    width: 95%; max-width: 700px;
+    box-shadow: 0 15px 50px rgba(0,0,0,0.25);
+    animation: fadeIn 0.8s ease;
+}
+h1 { text-align: center; font-size: 2.2em; margin-bottom: 10px; color: #333; }
+h2 { font-size: 1.2em; color: #555; text-align:center; margin-bottom:30px; }
+.tabs { display:flex; gap:10px; margin-bottom:25px; }
+.tab-btn { flex:1; padding:12px; border:none; border-radius:10px; cursor:pointer; background:#f0f0f0; color:#555; font-weight:500; transition: all 0.3s ease; }
+.tab-btn:hover { background:#667eea; color:white; }
+.tab-btn.active { background:#667eea; color:white; }
+.tab-content { display:none; animation: fadeIn 0.5s ease; }
+.tab-content.active { display:block; }
+
+/* Upload Section with Side Preview */
+.upload-wrapper { display:flex; flex-direction: row; gap:20px; align-items:flex-start; }
+.upload-area {
+    flex:1;
+    border: 3px dashed #667eea;
+    border-radius: 15px;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    font-size:1.1em;
+    color:#333;
+}
+.upload-area.dragover { background:#e0e8ff; border-color:#764ba2; }
+.upload-preview {
+    flex:1;
+    border-radius:15px;
+    overflow:hidden;
+    display:flex; justify-content:center; align-items:center;
+    box-shadow:0 5px 20px rgba(0,0,0,0.1);
+    max-height: 300px;
+}
+.upload-preview img { width:100%; object-fit:contain; border-radius:15px; }
+
+/* Prediction Panel */
+.prediction-panel {
+    flex:1;
+    padding:20px;
+    border-radius:15px;
+    background:#f8f9fa;
+    box-shadow:0 5px 15px rgba(0,0,0,0.1);
+    display:none;
+    flex-direction: column;
+    align-items:center;
+    text-align:center;
+}
+.prediction-panel .prediction { font-size:1.8em; font-weight:bold; margin-bottom:15px; padding:15px; border-radius:12px; width:100%; }
+.awake { background:#d4edda; color:#155724; }
+.drowsy { background:#f8d7da; color:#721c24; }
+.confidence-bar { width:100%; height:20px; border-radius:10px; background:#ddd; overflow:hidden; margin-top:10px; }
+.confidence-fill { height:100%; border-radius:10px; background:#667eea; width:0%; transition: width 0.6s ease; }
+
+/* Webcam */
+.webcam-container { position:relative; width:100%; margin-top:15px; border-radius:15px; overflow:hidden; box-shadow:0 5px 15px rgba(0,0,0,0.1); }
+video, img { width:100%; display:block; border-radius:15px; }
+
+/* Buttons */
+.btn { width:48%; padding:12px; border:none; border-radius:10px; background:#667eea; color:white; font-weight:600; cursor:pointer; transition: transform 0.2s, box-shadow 0.2s; margin-top:10px; }
+.btn:hover { transform: translateY(-2px); box-shadow:0 8px 20px rgba(0,0,0,0.2);}
+.btn:active { transform: translateY(0); box-shadow:none; }
+
+/* Animations */
+@keyframes fadeIn { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+</style>
 </head>
-<body class="h-screen flex overflow-hidden">
+<body>
+<div class="container">
+    <h1>GuardAI 😴 Drowsiness Detection</h1>
+    <h2>AI-powered live drowsiness monitoring</h2>
 
-    <aside class="w-64 glass-panel flex flex-col z-10">
-        <div class="p-6 flex items-center gap-3 border-b border-gray-700">
-            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <i class="fas fa-eye text-white text-sm"></i>
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('upload')">📤 Image Upload</button>
+        <button class="tab-btn" onclick="switchTab('webcam')">📹 Webcam</button>
+    </div>
+
+    <!-- Upload Tab -->
+    <div id="upload" class="tab-content active">
+        <div class="upload-wrapper">
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()" 
+                 ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                📸 Click or Drag Image Here
             </div>
-            <h1 class="text-xl font-bold tracking-tight text-white">GuardAI</h1>
-        </div>
-        <nav class="flex-1 py-6">
-            <button onclick="switchTab('upload')" id="btn-upload" class="sidebar-link active w-full text-left px-6 py-3 flex items-center gap-3 text-gray-400">
-                <i class="fas fa-file-image w-5"></i><span>Image Analysis</span>
-            </button>
-            <button onclick="switchTab('webcam')" id="btn-webcam" class="sidebar-link w-full text-left px-6 py-3 flex items-center gap-3 text-gray-400">
-                <i class="fas fa-video w-5"></i><span>Live Monitor</span>
-            </button>
-        </nav>
-    </aside>
-
-    <main class="flex-1 relative overflow-y-auto">
-        <div class="max-w-6xl mx-auto p-8">
-            
-            <header class="mb-8">
-                <h2 class="text-3xl font-bold text-white mb-2" id="page-title">Image Analysis</h2>
-                <p class="text-gray-400">Drag images below to analyze drowsiness levels.</p>
-            </header>
-
-            <div id="view-upload" class="space-y-6">
-                <div id="drop-zone" class="glass-panel rounded-2xl p-1 transition-all">
-                    <label for="fileInput" class="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer hover:border-blue-500 transition-colors group">
-                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-3 group-hover:text-blue-400"></i>
-                            <p class="text-lg text-gray-300 font-medium">Drag & Drop or Click to Upload</p>
-                        </div>
-                        <input id="fileInput" type="file" class="hidden" accept="image/*" onchange="processFile(this.files[0])" />
-                    </label>
-                </div>
-
-                <div id="results-container" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
-                    
-                    <div class="glass-panel rounded-2xl p-4">
-                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Source Image</h3>
-                        <img id="preview-img" src="" class="w-full h-64 object-cover rounded-lg border border-gray-700 shadow-2xl">
-                    </div>
-
-                    <div class="glass-panel rounded-2xl p-6 flex flex-col justify-between">
-                        <div>
-                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-6">AI Analysis</h3>
-                            <div id="loading-state" class="hidden flex flex-col items-center py-10">
-                                <div class="loader rounded-full border-4 border-gray-700 h-10 w-10 mb-4"></div>
-                                <p class="text-blue-400">Analyzing patterns...</p>
-                            </div>
-
-                            <div id="data-display" class="text-center">
-                                <div id="status-icon" class="text-6xl mb-4"></div>
-                                <div id="prediction-text" class="text-4xl font-black text-white mb-8"></div>
-                                
-                                <div class="space-y-6 text-left">
-                                    <div>
-                                        <div class="flex justify-between text-sm mb-2"><span class="text-gray-400">Awake Confidence</span><span id="prob-open">0%</span></div>
-                                        <div class="w-full bg-gray-800 rounded-full h-3"><div id="bar-open" class="bg-green-500 h-3 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
-                                    </div>
-                                    <div>
-                                        <div class="flex justify-between text-sm mb-2"><span class="text-gray-400">Drowsy Confidence</span><span id="prob-closed">0%</span></div>
-                                        <div class="w-full bg-gray-800 rounded-full h-3"><div id="bar-closed" class="bg-red-500 h-3 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+            <div class="upload-preview" id="uploadPreview">
+                <span style="color:#999;">Preview will appear here</span>
+            </div>
+            <div class="prediction-panel" id="predictionPanel">
+                <div class="prediction" id="predictionText"></div>
+                <div>Confidence: <span id="confidenceText">0%</span></div>
+                <div class="confidence-bar">
+                    <div class="confidence-fill" id="confidenceFill"></div>
                 </div>
             </div>
-
-            <div id="view-webcam" class="hidden">
-                <div class="glass-panel rounded-2xl p-1"><img id="webcam-feed" src="" class="w-full rounded-xl bg-black min-h-[480px]"></div>
-            </div>
         </div>
-    </main>
+        <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)" style="display:none;">
+        <button class="btn" onclick="predictImage()">Predict</button>
+    </div>
 
-    <script>
-        const dropZone = document.getElementById('drop-zone');
+    <!-- Webcam Tab -->
+    <div id="webcam" class="tab-content">
+        <div class="webcam-container">
+            <img id="webcamStream" style="background:#000;">
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+            <button class="btn" onclick="startWebcam()">Start Webcam</button>
+            <button class="btn" onclick="stopWebcam()">Stop Webcam</button>
+        </div>
+    </div>
+</div>
 
-        // Drag and Drop Logic
-        ['dragenter', 'dragover'].forEach(name => {
-            dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); }, false);
-        });
-        ['dragleave', 'drop'].forEach(name => {
-            dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); }, false);
-        });
-        dropZone.addEventListener('drop', (e) => { processFile(e.dataTransfer.files[0]); }, false);
+<script>
+let selectedFile = null;
+let webcamActive = false;
+let webcamImg = document.getElementById('webcamStream');
 
-        function processFile(file) {
-            if (!file) return;
+function switchTab(tab){
+    document.querySelectorAll('.tab-content').forEach(e=>e.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(e=>e.classList.remove('active'));
+    document.getElementById(tab).classList.add('active');
+    event.target.classList.add('active');
+}
 
-            // Show Results Container
-            document.getElementById('results-container').classList.remove('hidden');
-            document.getElementById('data-display').classList.add('hidden');
-            document.getElementById('loading-state').classList.remove('hidden');
+function handleDragOver(e){ e.preventDefault(); document.querySelector('.upload-area').classList.add('dragover'); }
+function handleDragLeave(e){ document.querySelector('.upload-area').classList.remove('dragover'); }
+function handleDrop(e){ e.preventDefault(); document.querySelector('.upload-area').classList.remove('dragover'); handleFileUpload(e.dataTransfer.files[0]); }
+function handleFileSelect(e){ handleFileUpload(e.target.files[0]); }
 
-            // Set Preview Image
-            const reader = new FileReader();
-            reader.onload = (e) => { document.getElementById('preview-img').src = e.target.result; };
-            reader.readAsDataURL(file);
+function handleFileUpload(file){
+    selectedFile = file;
+    const reader = new FileReader();
+    reader.onload = function(e){
+        document.getElementById('uploadPreview').innerHTML = `<img src="${e.target.result}">`;
+        document.getElementById('predictionPanel').style.display='none';
+    }
+    reader.readAsDataURL(file);
+}
 
-            // Send to FastAPI
-            const formData = new FormData();
-            formData.append('file', file);
-            fetch('/predict-image', { method: 'POST', body: formData })
-                .then(res => res.json())
-                .then(data => {
-                    document.getElementById('loading-state').classList.add('hidden');
-                    document.getElementById('data-display').classList.remove('hidden');
-                    updateUI(data);
-                });
-        }
+async function predictImage(){
+    if(!selectedFile){ alert('Select image first'); return; }
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    const res = await fetch('/predict-image', { method:'POST', body:formData });
+    const data = await res.json();
+    const isOpened = data.prediction.toLowerCase().includes('open');
+    const emoji = isOpened ? '😊' : '😴';
+    const status = isOpened ? 'Awake' : 'Drowsy';
+    const style = isOpened ? 'awake' : 'drowsy';
+    const predictionPanel = document.getElementById('predictionPanel');
+    document.getElementById('predictionText').innerHTML = `${emoji} ${status}`;
+    document.getElementById('confidenceText').innerHTML = `${(data.confidence*100).toFixed(2)}%`;
+    document.getElementById('confidenceFill').style.width = `${(data.confidence*100).toFixed(2)}%`;
+    predictionPanel.className = `prediction-panel ${style}`;
+    predictionPanel.style.display='flex';
+}
 
-        function updateUI(data) {
-            const isAwake = data.class_index === 1;
-            const statusText = document.getElementById('prediction-text');
-            statusText.innerText = isAwake ? "AWAKE" : "DROWSY";
-            statusText.className = isAwake ? "text-4xl font-black text-green-400 mb-8" : "text-4xl font-black text-red-500 mb-8";
-            document.getElementById('status-icon').innerHTML = isAwake ? '<i class="fas fa-check-circle text-green-400"></i>' : '<i class="fas fa-exclamation-triangle text-red-500"></i>';
+function startWebcam(){
+    if(!webcamActive){
+        webcamActive = true;
+        webcamImg.src = '/webcam';
+    }
+}
 
-            const pOpen = (data.probabilities.opened * 100).toFixed(1);
-            const pClosed = (data.probabilities.closed * 100).toFixed(1);
-            document.getElementById('prob-open').innerText = pOpen + "%";
-            document.getElementById('bar-open').style.width = pOpen + "%";
-            document.getElementById('prob-closed').innerText = pClosed + "%";
-            document.getElementById('bar-closed').style.width = pClosed + "%";
-        }
-
-        function switchTab(tab) {
-            document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'));
-            document.getElementById('btn-' + tab).classList.add('active');
-            document.getElementById('view-upload').classList.toggle('hidden', tab !== 'upload');
-            document.getElementById('view-webcam').classList.toggle('hidden', tab !== 'webcam');
-            document.getElementById('webcam-feed').src = tab === 'webcam' ? "/webcam" : "";
-        }
-    </script>
+function stopWebcam(){
+    webcamActive = false;
+    webcamImg.src = '';
+}
+</script>
 </body>
 </html>
 """
+
+
+
 
 # -----------------------------
 # HEALTH CHECK

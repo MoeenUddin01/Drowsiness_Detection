@@ -1,4 +1,4 @@
-# Training Results Summary
+<!-- # Training Results Summary
 
 ## ✅ Training Completed Successfully!
 
@@ -104,4 +104,4 @@ MODEL_PATH = "/home/moeenuddin/Desktop/Deep_learning/drowsiness_detection/Drowsi
 - Class names in training: `closed_1` and `opened_1`
 - Model uses 2 classes with balanced dataset (1600 samples each)
 - Training used class weights (both set to 1.0 since dataset is balanced)
-- Learning rate scheduler was active but didn't trigger (no LR reduction needed)
+- Learning rate scheduler was active but didn't trigger (no LR reduction needed) -->
