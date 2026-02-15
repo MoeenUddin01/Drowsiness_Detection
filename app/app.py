@@ -167,172 +167,157 @@ HTML_UI = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Drowsiness Detection</title>
+    <title>GuardAI | Drowsiness Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
-        .container { background: white; border-radius: 15px; box-shadow: 0 10px 40px rgba(0,0,0,0.2); width: 100%; max-width: 600px; padding: 40px; }
-        h1 { text-align: center; color: #333; margin-bottom: 10px; font-size: 2.5em; }
-        .subtitle { text-align: center; color: #666; margin-bottom: 30px; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 30px; border-bottom: 2px solid #eee; }
-        .tab-btn { padding: 12px 24px; border: none; background: none; cursor: pointer; font-size: 1em; color: #666; border-bottom: 3px solid transparent; transition: all 0.3s; }
-        .tab-btn.active { color: #667eea; border-bottom-color: #667eea; }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .upload-area { border: 3px dashed #667eea; border-radius: 10px; padding: 40px; text-align: center; cursor: pointer; transition: all 0.3s; }
-        .upload-area:hover { background: #f0f4ff; }
-        .upload-area.dragover { background: #e8f0ff; border-color: #764ba2; }
-        input[type="file"] { display: none; }
-        .btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 12px 30px; border-radius: 8px; cursor: pointer; font-size: 1em; transition: transform 0.2s; }
-        .btn:hover { transform: translateY(-2px); }
-        .btn:active { transform: translateY(0); }
-        .result { margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px; display: none; }
-        .result.show { display: block; animation: slideIn 0.3s ease; }
-        @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .prediction { font-size: 1.5em; font-weight: bold; padding: 15px; border-radius: 8px; margin: 10px 0; text-align: center; }
-        .awake { background: #d4edda; color: #155724; }
-        .drowsy { background: #f8d7da; color: #721c24; }
-        .confidence { color: #666; margin-top: 10px; }
-        .webcam-container { position: relative; width: 100%; max-width: 100%; }
-        video { width: 100%; border-radius: 10px; }
-        .webcam-btn { margin-top: 15px; }
-        .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #667eea; border-radius: 50%; animation: spin 1s linear infinite; vertical-align: middle; margin-right: 10px; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        .loading { display: none; text-align: center; color: #667eea; margin: 20px 0; }
-        .error { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 8px; margin: 10px 0; display: none; }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #0f172a; color: #e2e8f0; }
+        .glass-panel { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); }
+        .sidebar-link { transition: all 0.2s; border-left: 3px solid transparent; }
+        .sidebar-link.active { background: rgba(59, 130, 246, 0.1); border-left-color: #3b82f6; color: #60a5fa; }
+        .drag-over { border-color: #3b82f6 !important; background: rgba(59, 130, 246, 0.1) !important; }
+        .loader { border-top-color: #3b82f6; animation: spinner 1.5s linear infinite; }
+        @keyframes spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1>😴 Drowsiness Detection</h1>
-        <p class="subtitle">AI-powered drowsiness prediction system</p>
-        
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('upload')">📤 Image Upload</button>
-            <button class="tab-btn" onclick="switchTab('webcam')">📹 Webcam</button>
-        </div>
+<body class="h-screen flex overflow-hidden">
 
-        <!-- Image Upload Tab -->
-        <div id="upload" class="tab-content active">
-            <div class="upload-area" onclick="document.getElementById('fileInput').click()" ondrop="handleDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
-                <div style="font-size: 3em; margin-bottom: 10px;">📸</div>
-                <p><strong>Click to upload</strong> or drag and drop</p>
-                <p style="color: #999; font-size: 0.9em;">PNG, JPG, GIF (max 10MB)</p>
+    <aside class="w-64 glass-panel flex flex-col z-10">
+        <div class="p-6 flex items-center gap-3 border-b border-gray-700">
+            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                <i class="fas fa-eye text-white text-sm"></i>
             </div>
-            <input type="file" id="fileInput" accept="image/*" onchange="handleFileSelect(event)">
-            <button class="btn" style="width: 100%; margin-top: 20px;" onclick="predictImage()">Predict</button>
-            <div class="loading" id="uploadLoading"><span class="spinner"></span> Analyzing image...</div>
-            <div class="error" id="uploadError"></div>
-            <div class="result" id="uploadResult"></div>
+            <h1 class="text-xl font-bold tracking-tight text-white">GuardAI</h1>
         </div>
+        <nav class="flex-1 py-6">
+            <button onclick="switchTab('upload')" id="btn-upload" class="sidebar-link active w-full text-left px-6 py-3 flex items-center gap-3 text-gray-400">
+                <i class="fas fa-file-image w-5"></i><span>Image Analysis</span>
+            </button>
+            <button onclick="switchTab('webcam')" id="btn-webcam" class="sidebar-link w-full text-left px-6 py-3 flex items-center gap-3 text-gray-400">
+                <i class="fas fa-video w-5"></i><span>Live Monitor</span>
+            </button>
+        </nav>
+    </aside>
 
-        <!-- Webcam Tab -->
-        <div id="webcam" class="tab-content">
-            <div class="webcam-container">
-                <img id="webcamStream" src="/webcam" style="width: 100%; border-radius: 10px; background: #000;">
+    <main class="flex-1 relative overflow-y-auto">
+        <div class="max-w-6xl mx-auto p-8">
+            
+            <header class="mb-8">
+                <h2 class="text-3xl font-bold text-white mb-2" id="page-title">Image Analysis</h2>
+                <p class="text-gray-400">Drag images below to analyze drowsiness levels.</p>
+            </header>
+
+            <div id="view-upload" class="space-y-6">
+                <div id="drop-zone" class="glass-panel rounded-2xl p-1 transition-all">
+                    <label for="fileInput" class="flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-gray-600 rounded-xl cursor-pointer hover:border-blue-500 transition-colors group">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                            <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-3 group-hover:text-blue-400"></i>
+                            <p class="text-lg text-gray-300 font-medium">Drag & Drop or Click to Upload</p>
+                        </div>
+                        <input id="fileInput" type="file" class="hidden" accept="image/*" onchange="processFile(this.files[0])" />
+                    </label>
+                </div>
+
+                <div id="results-container" class="hidden grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
+                    
+                    <div class="glass-panel rounded-2xl p-4">
+                        <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Source Image</h3>
+                        <img id="preview-img" src="" class="w-full h-64 object-cover rounded-lg border border-gray-700 shadow-2xl">
+                    </div>
+
+                    <div class="glass-panel rounded-2xl p-6 flex flex-col justify-between">
+                        <div>
+                            <h3 class="text-xs font-bold text-gray-500 uppercase tracking-widest mb-6">AI Analysis</h3>
+                            <div id="loading-state" class="hidden flex flex-col items-center py-10">
+                                <div class="loader rounded-full border-4 border-gray-700 h-10 w-10 mb-4"></div>
+                                <p class="text-blue-400">Analyzing patterns...</p>
+                            </div>
+
+                            <div id="data-display" class="text-center">
+                                <div id="status-icon" class="text-6xl mb-4"></div>
+                                <div id="prediction-text" class="text-4xl font-black text-white mb-8"></div>
+                                
+                                <div class="space-y-6 text-left">
+                                    <div>
+                                        <div class="flex justify-between text-sm mb-2"><span class="text-gray-400">Awake Confidence</span><span id="prob-open">0%</span></div>
+                                        <div class="w-full bg-gray-800 rounded-full h-3"><div id="bar-open" class="bg-green-500 h-3 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
+                                    </div>
+                                    <div>
+                                        <div class="flex justify-between text-sm mb-2"><span class="text-gray-400">Drowsy Confidence</span><span id="prob-closed">0%</span></div>
+                                        <div class="w-full bg-gray-800 rounded-full h-3"><div id="bar-closed" class="bg-red-500 h-3 rounded-full transition-all duration-1000" style="width: 0%"></div></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <p style="color: #666; margin-top: 10px; text-align: center; font-size: 0.9em;">Live predictions displayed on video feed</p>
+
+            <div id="view-webcam" class="hidden">
+                <div class="glass-panel rounded-2xl p-1"><img id="webcam-feed" src="" class="w-full rounded-xl bg-black min-h-[480px]"></div>
+            </div>
         </div>
-    </div>
+    </main>
 
     <script>
-        let selectedFile = null;
+        const dropZone = document.getElementById('drop-zone');
+
+        // Drag and Drop Logic
+        ['dragenter', 'dragover'].forEach(name => {
+            dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); }, false);
+        });
+        ['dragleave', 'drop'].forEach(name => {
+            dropZone.addEventListener(name, (e) => { e.preventDefault(); dropZone.classList.remove('drag-over'); }, false);
+        });
+        dropZone.addEventListener('drop', (e) => { processFile(e.dataTransfer.files[0]); }, false);
+
+        function processFile(file) {
+            if (!file) return;
+
+            // Show Results Container
+            document.getElementById('results-container').classList.remove('hidden');
+            document.getElementById('data-display').classList.add('hidden');
+            document.getElementById('loading-state').classList.remove('hidden');
+
+            // Set Preview Image
+            const reader = new FileReader();
+            reader.onload = (e) => { document.getElementById('preview-img').src = e.target.result; };
+            reader.readAsDataURL(file);
+
+            // Send to FastAPI
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/predict-image', { method: 'POST', body: formData })
+                .then(res => res.json())
+                .then(data => {
+                    document.getElementById('loading-state').classList.add('hidden');
+                    document.getElementById('data-display').classList.remove('hidden');
+                    updateUI(data);
+                });
+        }
+
+        function updateUI(data) {
+            const isAwake = data.class_index === 1;
+            const statusText = document.getElementById('prediction-text');
+            statusText.innerText = isAwake ? "AWAKE" : "DROWSY";
+            statusText.className = isAwake ? "text-4xl font-black text-green-400 mb-8" : "text-4xl font-black text-red-500 mb-8";
+            document.getElementById('status-icon').innerHTML = isAwake ? '<i class="fas fa-check-circle text-green-400"></i>' : '<i class="fas fa-exclamation-triangle text-red-500"></i>';
+
+            const pOpen = (data.probabilities.opened * 100).toFixed(1);
+            const pClosed = (data.probabilities.closed * 100).toFixed(1);
+            document.getElementById('prob-open').innerText = pOpen + "%";
+            document.getElementById('bar-open').style.width = pOpen + "%";
+            document.getElementById('prob-closed').innerText = pClosed + "%";
+            document.getElementById('bar-closed').style.width = pClosed + "%";
+        }
 
         function switchTab(tab) {
-            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
-            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-            document.getElementById(tab).classList.add('active');
-            event.target.classList.add('active');
-        }
-
-        function handleDragOver(e) {
-            e.preventDefault();
-            document.querySelector('.upload-area').classList.add('dragover');
-        }
-
-        function handleDragLeave(e) {
-            document.querySelector('.upload-area').classList.remove('dragover');
-        }
-
-        function handleDrop(e) {
-            e.preventDefault();
-            document.querySelector('.upload-area').classList.remove('dragover');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                selectedFile = files[0];
-                document.querySelector('.upload-area').innerHTML = `<div style="font-size: 2em;">✅</div><p>${selectedFile.name}</p><p style="color: #999; font-size: 0.9em;">Ready to predict</p>`;
-            }
-        }
-
-        function handleFileSelect(e) {
-            selectedFile = e.target.files[0];
-            if (selectedFile) {
-                document.querySelector('.upload-area').innerHTML = `<div style="font-size: 2em;">✅</div><p>${selectedFile.name}</p><p style="color: #999; font-size: 0.9em;">Ready to predict</p>`;
-            }
-        }
-
-        async function predictImage() {
-            if (!selectedFile) {
-                showError('Please select an image first');
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('file', selectedFile);
-
-            showLoading(true);
-            showError('');
-            
-            try {
-                const response = await fetch('/predict-image', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) throw new Error('Prediction failed');
-                
-                const data = await response.json();
-                displayResult(data);
-            } catch (error) {
-                showError('Error: ' + error.message);
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        function displayResult(data) {
-            const predClass = data.prediction.toLowerCase();
-            const resultDiv = document.getElementById('uploadResult');
-            // Handle both 'opened' and 'opened_1' class names
-            const isOpened = predClass === 'opened' || predClass === 'opened_1';
-            const emoji = isOpened ? '😊' : '😴';
-            const status = isOpened ? 'Awake' : 'Drowsy';
-            const styleClass = isOpened ? 'awake' : 'drowsy';
-            
-            resultDiv.innerHTML = `
-                <div class="prediction ${styleClass}">
-                    ${emoji} ${status}
-                </div>
-                <div class="confidence">
-                    <strong>Confidence:</strong> ${(data.confidence * 100).toFixed(2)}%<br>
-                    <strong>Model Class:</strong> ${data.prediction} (Class ${data.class_index})
-                </div>
-            `;
-            resultDiv.classList.add('show');
-        }
-
-        function showLoading(show) {
-            document.getElementById('uploadLoading').style.display = show ? 'block' : 'none';
-        }
-
-        function showError(msg) {
-            const errorDiv = document.getElementById('uploadError');
-            if (msg) {
-                errorDiv.textContent = msg;
-                errorDiv.style.display = 'block';
-            } else {
-                errorDiv.style.display = 'none';
-            }
+            document.querySelectorAll('.sidebar-link').forEach(el => el.classList.remove('active'));
+            document.getElementById('btn-' + tab).classList.add('active');
+            document.getElementById('view-upload').classList.toggle('hidden', tab !== 'upload');
+            document.getElementById('view-webcam').classList.toggle('hidden', tab !== 'webcam');
+            document.getElementById('webcam-feed').src = tab === 'webcam' ? "/webcam" : "";
         }
     </script>
 </body>
